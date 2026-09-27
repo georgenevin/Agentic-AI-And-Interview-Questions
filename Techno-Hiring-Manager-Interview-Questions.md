@@ -523,6 +523,9 @@ In a position where I have ownership, more opportunity to solve client problems 
 
 ---
 
-**Q: Question to hiring manager — how are engineering decisions made in the team?**
+**Q: Question to hiring manager **
 
-*(Question you're asking them.)*
+ how are engineering decisions made in the team?
+ common roadblock faced when moving a client ai proof of concept into a fully scaled production envrionment?
+ how to successfully complete 6 month in your arganisation?
+ 
