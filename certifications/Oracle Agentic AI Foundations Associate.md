@@ -1,9 +1,11 @@
-# AI Agents and LangChain Agents: Reviewed Study Notes
+# AI Agents, LangChain Agents and MCP: Reviewed Study Notes
 
 **Contents**
 - Part 1: AI agent fundamentals
 - Part 2: LangChain agent and what `invoke()` does
-
+- Part 3: Sample conversation JSON (one full tool-calling loop)
+- Part 4: Model Context Protocol (MCP), including a full JSON-RPC session sample
+- Appendix: Corrections made to the original notes
 
 ---
 
@@ -305,7 +307,338 @@ Note that message 7 reports **current** weather while the user travels **next we
 }
 ```
 
-
+A standalone copy is in `agent_conversation_sample.json`.
 
 ---
 
+# Part 4: Model Context Protocol (MCP)
+
+## 4.1 What is MCP?
+
+- **Model Context Protocol**: an open standard, introduced by Anthropic, that gives AI applications one universal way to connect to external tools, data sources, and systems ("USB-C for AI")
+- Messages use **JSON-RPC 2.0**; the specification itself is open
+- Solves the **N×M integration problem**: instead of every app writing a custom integration for every tool, each app implements MCP once and each tool exposes MCP once
+- **MCP vs function calling:** they complement each other. MCP standardizes how tools are **discovered and served**. Function calling is how the **LLM requests** a tool. The host converts MCP tool definitions (`inputSchema`) into the LLM's tool schemas.
+
+## 4.2 Architecture
+
+| Role | What it is |
+|---|---|
+| **Host** | The AI application (Claude Desktop, VS Code, your own agent app). Manages the LLM, the UI, and user consent. |
+| **Client** | Created by the host. Each client has a **dedicated 1:1 connection** to one server. |
+| **Server** | Exposes tools, resources, and prompts. Can run **locally or remotely**. |
+
+The LLM never talks to MCP directly. Flow: user → host → LLM (with tool schemas from MCP) → tool call → client → `tools/call` → **server executes** → result → host → LLM.
+
+**How it fits your LangChain notes (Part 2):** the agent loop is the same. The only difference is who runs the tool. With plain `@tool` functions, **your process** runs the code. With MCP, the **MCP server** runs it, and the client just forwards the request and returns the result.
+
+## 4.3 Core components
+
+| Component | Controlled by | What it is |
+|---|---|---|
+| **Tools** | **Model** | Functions the AI can call to perform actions |
+| **Resources** | **Application** | Read-only data for context (files, README.md, DB records, GET-style endpoints), identified by URI; the host decides what goes into the context window |
+| **Prompts** | **User** | Reusable templates that structure LLM interactions (e.g. slash commands) |
+
+Servers declare these as **capabilities**. Clients can also offer capabilities to servers: **sampling** (server asks the host's LLM), **roots**, and **elicitation** (server asks the user for input).
+
+## 4.4 Connection lifecycle
+
+1. **Initialize**
+   - Client → `initialize` **request**: protocol version, capabilities, client info
+   - Server → **response**: its version, capabilities, server info (versions are negotiated)
+   - Client → `initialized` **notification**: ready to exchange messages
+2. **Discover** (during the operation phase): client calls `tools/list`, `resources/list`, `prompts/list`
+3. **Operate**: the LLM decides which tool to call; the client sends `tools/call`; **the server executes it** and returns the result
+4. **Shutdown**: client closes the transport and ends the session (over stdio: close stdin, then the process exits)
+
+The spec formally defines three phases (initialization, operation, shutdown); discovery happens inside operation. The 4-step view is a handy mental model.
+
+## 4.5 JSON-RPC essentials
+
+- Three message types: **request** (has `id`), **response** (same `id`), **notification** (no `id`, no response)
+- The `id` **matches a response to its request** (like the tool call ids in Part 2)
+- Communication is **bidirectional**: servers can send requests to clients too
+
+**Methods**
+- `tools/list`: called after connecting; returns every tool the server offers, so agents **discover tools without hardcoding them**. Servers can notify the client when the list changes.
+- `tools/call`: sent each time the LLM decides it needs a tool; contains tool name + arguments. The LLM chooses based on the user's request and the **tool descriptions** (same rule as docstrings: vague description means wrong tool choice).
+
+**Two kinds of failure**
+- **Tool execution error:** the tool ran but failed. The response is a normal `result` with `isError: true`, so the model can read the error and recover.
+- **Protocol error:** unknown tool, bad params, unknown method. The response is a JSON-RPC `error` object (e.g. code `-32602`).
+
+## 4.6 Transports
+
+| | **stdio** | **Streamable HTTP** |
+|---|---|---|
+| How | Host spawns the server as a **child process** on the same machine; messages flow over **stdin/stdout** (newline-delimited JSON-RPC) | Server runs as an **HTTP service** at one MCP endpoint; responses can stream via **SSE** |
+| Network | None, so low overhead | Remote or cloud deployment |
+| Clients | One client per spawned process | **Many clients** can connect |
+| Best for | Local tools (files, git) | Shared, remote, or cloud-hosted servers |
+| Watch out | **Never write logs to stdout**, use stderr | Auth (OAuth-based), validate `Origin`, bind to localhost for local servers, session handling |
+
+Streamable HTTP replaced the older HTTP+SSE transport; SSE is now an optional streaming mechanism inside it.
+
+## 4.7 Code: connecting with LangChain
+
+```python
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+client = MultiServerMCPClient({
+    "math": {                         # label for this server
+        "transport": "stdio",         # how to talk to it
+        "command": "python",          # program to run
+        "args": ["/path/to/math_server.py"],
+    },
+    "weather": {
+        "transport": "streamable_http",
+        "url": "http://localhost:8000/mcp",
+    },
+})
+tools = await client.get_tools()      # pass these to create_agent(...)
+```
+
+- `MultiServerMCPClient` creates one connection per configured server. By default the adapter opens a fresh session per tool call; use an explicit session if a server must keep state (check the adapter docs for your version).
+- **Responsibility shifts:** tool implementation, backend credentials, and schemas live in the **server**. Your app becomes the **orchestrator**.
+
+## 4.8 `uvx` and `StdioServerParameters`
+
+- `uvx` (alias for `uv tool run`) runs a Python tool from **PyPI** in an **isolated environment**, with no `pip install` into your own environment. It downloads the package, caches it, and runs its entry point.
+- With stdio, the client launches that entry point as a child process and exchanges JSON-RPC over its **stdin/stdout**.
+
+```python
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+params = StdioServerParameters(
+    command="uvx",
+    args=["oracle.oci-usage-mcp-server"],        # verify package name in Oracle's MCP repo
+    env={"OCI_CONFIG_PROFILE": "DEFAULT"},       # env var names depend on the server's README
+)
+
+async with stdio_client(params) as (read, write):
+    async with ClientSession(read, write) as session:
+        await session.initialize()               # handshake
+        tools = await session.list_tools()       # discover
+        result = await session.call_tool("tool_name", {"arg": "value"})  # operate
+# exiting the context closes the transport (shutdown)
+```
+
+**Supply-chain caution:** `uvx` runs third-party code with your permissions. **Pin versions** (e.g. `pkg@1.2.3`) and vet sources. The package name and env var above are unverified placeholders; check the server's README.
+
+## 4.9 When MCP shines
+
+Use it when tools are **external or reusable across apps**:
+
+- **Cloud (AWS, Azure, OCI):** manage infrastructure through a server instead of writing SDK integration code in your app (the server wraps the SDK)
+- **Databases (Oracle DB, PostgreSQL):** query without embedding drivers and credentials in your agent app
+- **Dev tools (GitHub, Jira):** create issues, review PRs from any MCP-enabled agent
+- **Communication (Slack, email):** send messages without per-app integrations
+- **File system:** read/write files on a machine, restricted to **allowed directories**
+
+**When not to bother:** a single app with a few simple in-process tools is usually simpler and faster as plain function tools, with no extra process or protocol hop.
+
+## 4.10 Security (ties into section 1.5)
+
+- **Tool poisoning:** a malicious server can hide instructions in tool descriptions. **Treat third-party servers as untrusted.**
+- **Indirect prompt injection** via tool results or resources
+- **Over-permissioned servers:** apply least privilege and scope credentials narrowly
+- **Human approval** for sensitive or irreversible tool calls (the host should show tool calls to the user)
+- **Authorization:** remote servers should use OAuth-based auth; stdio servers typically take credentials from environment variables
+- **Observability:** log every `tools/call` with arguments and results
+
+## 4.11 Sample MCP session (JSON-RPC)
+
+A full session between a client and a small `math-server`: handshake, discovery, a successful call, a tool execution error, and a protocol error.
+
+> The `step`, `direction`, and `type` fields are **added for readability only**. On the wire, each message is just the object under `message`. The protocol version string is an example; use whichever version your SDK negotiates.
+
+| Step | Direction | What happens |
+|---|---|---|
+| 1 | client → server | `initialize` request: protocol version, client capabilities |
+| 2 | server → client | Response with server capabilities (`tools`, `resources`, `prompts`) |
+| 3 | client → server | `notifications/initialized` (notification, no `id`, no reply) |
+| 4-5 | client ↔ server | `tools/list` → list of tools with `name`, `description`, `inputSchema` |
+| 6-7 | client ↔ server | `tools/call` `add` → result `7`, `isError: false` |
+| 8-9 | client ↔ server | `tools/call` `divide` by 0 → **tool execution error**: `isError: true` |
+| 10-11 | client ↔ server | `tools/call` unknown tool → **protocol error**: JSON-RPC `error` |
+
+**Connecting it to the agent loop:** between steps 5 and 6, the host converts each tool's `inputSchema` into the LLM's tool schema and sends it with the conversation (Part 3 format). When the LLM returns a tool call, the client wraps it in a `tools/call` request (step 6), and the server's result (step 7) becomes the `tool` message sent back to the LLM.
+
+```json
+[
+  {
+    "step": 1,
+    "direction": "client -> server",
+    "type": "request",
+    "message": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {
+          "roots": { "listChanged": true },
+          "sampling": {}
+        },
+        "clientInfo": { "name": "my-agent-host", "version": "1.0.0" }
+      }
+    }
+  },
+  {
+    "step": 2,
+    "direction": "server -> client",
+    "type": "response",
+    "message": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {
+          "tools": { "listChanged": true },
+          "resources": {},
+          "prompts": {}
+        },
+        "serverInfo": { "name": "math-server", "version": "0.1.0" }
+      }
+    }
+  },
+  {
+    "step": 3,
+    "direction": "client -> server",
+    "type": "notification",
+    "message": {
+      "jsonrpc": "2.0",
+      "method": "notifications/initialized"
+    }
+  },
+  {
+    "step": 4,
+    "direction": "client -> server",
+    "type": "request",
+    "message": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "tools/list"
+    }
+  },
+  {
+    "step": 5,
+    "direction": "server -> client",
+    "type": "response",
+    "message": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "tools": [
+          {
+            "name": "add",
+            "description": "Add two numbers and return the sum. Use for any addition request.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "a": { "type": "number", "description": "First number" },
+                "b": { "type": "number", "description": "Second number" }
+              },
+              "required": ["a", "b"]
+            }
+          },
+          {
+            "name": "divide",
+            "description": "Divide a by b and return the quotient.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "a": { "type": "number", "description": "Numerator" },
+                "b": { "type": "number", "description": "Denominator, must not be zero" }
+              },
+              "required": ["a", "b"]
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "step": 6,
+    "direction": "client -> server",
+    "type": "request",
+    "message": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "tools/call",
+      "params": {
+        "name": "add",
+        "arguments": { "a": 3, "b": 4 }
+      }
+    }
+  },
+  {
+    "step": 7,
+    "direction": "server -> client",
+    "type": "response",
+    "message": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "result": {
+        "content": [{ "type": "text", "text": "7" }],
+        "isError": false
+      }
+    }
+  },
+  {
+    "step": 8,
+    "direction": "client -> server",
+    "type": "request",
+    "message": {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "method": "tools/call",
+      "params": {
+        "name": "divide",
+        "arguments": { "a": 10, "b": 0 }
+      }
+    }
+  },
+  {
+    "step": 9,
+    "direction": "server -> client",
+    "type": "response (tool execution error)",
+    "message": {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "result": {
+        "content": [{ "type": "text", "text": "Error: division by zero" }],
+        "isError": true
+      }
+    }
+  },
+  {
+    "step": 10,
+    "direction": "client -> server",
+    "type": "request (unknown tool)",
+    "message": {
+      "jsonrpc": "2.0",
+      "id": 5,
+      "method": "tools/call",
+      "params": {
+        "name": "multiply",
+        "arguments": { "a": 2, "b": 5 }
+      }
+    }
+  },
+  {
+    "step": 11,
+    "direction": "server -> client",
+    "type": "response (protocol error)",
+    "message": {
+      "jsonrpc": "2.0",
+      "id": 5,
+      "error": {
+        "code": -32602,
+        "message": "Unknown tool: multiply"
+      }
+    }
+  }
+]
