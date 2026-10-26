@@ -1082,3 +1082,307 @@ except InputGuardrailTripwireTriggered:
 ```
 
 A standalone copy of all three is in `openai_stack_samples.json`.
+
+
+
+# OCI Enterprise AI Agents — Corrected Study Notes
+**Reviewed against Oracle OCI documentation on 26 October 2026**
+
+> Product naming note: Oracle documents these capabilities under **OCI Generative AI**, including **Enterprise AI Agents**, the **Responses API**, agent tools, memory, and hosted applications. “OCI Enterprise AI” is useful shorthand, but use the official service/API names in technical discussions.
+
+## 1. What is an AI agent?
+
+An AI agent is an application that uses a model to interpret a goal, decide what step to take, and—when configured—call tools or retrieve information to complete a task. An agent is more than a chat model: it combines instructions, a model, context, tools, application logic, and security controls.
+
+Example: An employee asks, “What is our travel reimbursement policy?” The agent searches approved policy documents, retrieves relevant passages, and drafts an answer with source references. If the employee asks for their claim status, the agent may call an authenticated business API, subject to authorization checks.
+
+**Important:** the model may propose a tool call, but a tool or application runtime executes it. Enforce authorization and validate inputs in the application/tool layer; do not rely on model instructions as a security boundary.
+
+## 2. Generic enterprise agent stack
+
+This is a conceptual architecture, not a list of OCI product names.
+
+| Layer | Responsibility | Examples / questions |
+|---|---|---|
+| User experience and agent definition | User interface, agent persona, instructions, task scope, and intended business outcome | Web app, chat interface, system instructions, allowed tools |
+| Request entry and access | Authenticate callers, authorize requests, validate input, rate-limit, and route requests | API gateway, identity provider, application middleware |
+| Model and orchestration | Send prompts to a model, interpret results, manage tool calls and multi-step workflows | Responses API, agent framework, workflow logic |
+| State and memory | Preserve conversation history or retrieve durable information where configured | Conversation history, short-term compaction, long-term memory |
+| Tools and execution sandbox | Execute code or call functions/MCP servers, with suitable isolation and limits | Code interpreter, function calling, MCP, container sandbox |
+| Integration and data | Connect to enterprise APIs, databases, documents, and search indexes | REST APIs, vector stores, object storage, enterprise systems |
+| Runtime and scaling | Run the application, configure replicas and autoscaling, and provide an invocation endpoint | Managed hosting, container image, scaling rules |
+| Security and governance | Apply IAM, network controls, guardrails, auditing, and data-handling rules | OCI IAM policies, private endpoints, guardrails, audit logs |
+| Observability and operations | Diagnose failures and monitor latency, errors, usage, and resource consumption | Application logs, metrics, traces where instrumented, alerts |
+
+Not every deployment needs a separate product for every layer. Some functions are provided by OCI; others remain the responsibility of the application developer.
+
+## 3. OCI Generative AI: three useful capability groups
+
+A useful mental model is:
+
+1. **Models — intelligence:** generate text, create embeddings, or rerank candidate documents.
+2. **Enterprise AI Agents — action and orchestration:** connect model responses to tools, conversations, memory, and custom agent runtimes.
+3. **Security and governance — trust:** use IAM, networking controls, configurable guardrails, logging, and auditability.
+
+This is a study framework, not necessarily Oracle's formal three-layer product taxonomy.
+
+## 4. Enterprise AI models
+
+### 4.1 Chat / generative models
+- Generate conversational responses, summaries, explanations, and structured outputs.
+- Some supported models can use tools through the Responses API.
+- Model capability, supported input/output modalities, context limits, parameters, regions, and tool support vary by model.
+- A model call does not automatically remember prior requests. Provide conversation history or use supported conversation-state features.
+- Temperature controls sampling variability; lower values usually make outputs less variable, but do **not** guarantee correctness or prevent hallucinations.
+
+### 4.2 Embedding models
+- Convert text (and, only for models that support it, other modalities) into numerical vectors.
+- Vectors can represent semantic similarity and support retrieval, clustering, or recommendations.
+- Similarity can be calculated using cosine similarity or another suitable metric.
+- **Correction:** do not memorise “1024 dimensions” as a universal OCI rule. Vector dimensions depend on the selected embedding model and configuration.
+- In retrieval-augmented generation (RAG), an embedding model helps find relevant passages; the generative model then uses those passages to compose an answer.
+
+### 4.3 Rerank models
+- Re-score a list of candidate documents/passages against a query and reorder them by relevance.
+- Often used after initial retrieval to improve the ordering of the top candidates.
+- A rerank score is a model-specific relevance score. **Do not assume every score is a calibrated probability from 0 to 1**, or compare scores from different rerank models as if they were on one scale.
+- Typical retrieval flow: query → retrieve candidates (for example, vector or keyword search) → rerank candidates → pass the best passages to the generation model.
+
+## 5. Model access modes: on-demand vs dedicated
+
+| Topic | On-demand mode | Dedicated mode |
+|---|---|---|
+| Infrastructure | Shared managed model-serving infrastructure | Dedicated GPU capacity in a dedicated AI cluster |
+| Billing model | Generally usage/inference based; check the current model's pricing | Commitment to cluster usage/unit-hours applies |
+| Best fit | Experimentation, proof of concept, evaluation, and supported production use cases where the model/mode fits | Workloads needing dedicated capacity and more predictable performance; also supported fine-tuning/imported-model workflows |
+| Fine-tuning | Do not assume it is available in on-demand mode | Supported fine-tuning workflows use a fine-tuning dedicated AI cluster |
+| Custom/imported models | Availability depends on model and mode | Dedicated clusters can host supported pretrained, fine-tuned custom, and imported models |
+| Performance | Capacity and limits depend on service/model conditions | Dedicated GPU resources can provide more predictable performance |
+| Availability | Varies by model and region | Varies by model and region; cluster and endpoint configuration is required |
+
+
+
+## 6. OCI Enterprise AI Agents: two main approaches
+
+Oracle documents two principal approaches, which can also be combined.
+
+### 6.1 Approach A — Build with the OCI Responses API
+
+Use this when you want an API-first approach and OCI-managed model interaction and supported agent capabilities without hosting your own complete agent runtime.
+
+**Conceptual flow**
+
+1. The client application authenticates to OCI.
+2. It sends a request to the OCI Responses API using a supported model.
+3. The request can include instructions, input, prior response/conversation context, and supported tools.
+4. The service generates a response and may coordinate supported multi-step/tool workflows.
+5. The client reads or streams the response and handles application-specific behavior.
+
+The Responses API is OpenAI-compatible in request style, but it uses OCI endpoints and OCI authentication. Compatibility does not mean every OpenAI model, parameter, or tool is supported. Check the OCI supported-model and tool lists.
+
+Supported tool types documented for the OCI Responses API include:
+- **File Search** — search files made available through the relevant OCI resources.
+- **Code Interpreter** — execute supported code in a managed sandbox.
+- **Function Calling** — request a call to a function implemented by your application or runtime.
+- **MCP Calling** — connect to supported remote Model Context Protocol servers.
+
+Do not treat the tool list as unlimited or assume every tool works with every model/region. Confirm current support.
+
+### 6.2 Approach B — Deploy a hosted agentic application
+
+Use this when you have built an agent using a framework or custom code and want OCI Generative AI to host the containerized application in a managed runtime.
+
+**Typical lifecycle**
+1. Develop the agent and its runtime.
+2. Package the application as a container image.
+3. Push the image to Oracle Cloud Infrastructure Registry (OCIR).
+4. Create an OCI Generative AI application and configure runtime settings.
+5. Create a deployment that points to the container image and tag.
+6. Activate the deployment.
+7. Invoke the endpoint provisioned for the application.
+
+OCI application settings cover supported configuration for scaling, managed storage, networking, and authentication. The service provisions an endpoint. You still own the application code, container image, dependency management, agent logic, and safe implementation of your tools.
+
+
+
+### 6.3 Hybrid approach
+You can use the Responses API for supported model/tool/conversation capabilities and a hosted application for custom runtime logic. For example, the hosted application may expose business-specific tools while calling the Responses API for model interaction.
+
+## 7. Responses API vs Conversations API vs Chat Completions API
+
+| API | Purpose | Key distinction |
+|---|---|---|
+| **Responses API** | Main API for model responses and supported agentic workflows | Can support tools, multi-step work, structured outputs, and conversation context |
+| **Conversations API** | Create and manage a persistent conversation object for multi-turn history | Create/reuse a conversation and pass its conversation ID with Responses API requests |
+| **Chat Completions API** | Simpler chat-style request/response interface | Stateless interface; useful for existing integrations or simple chat that does not need Responses API features |
+
+**Important terminology:** the product/API name is **Responses API**, not “Response API.” A conversation ID preserves the relevant conversation state according to the API and retention settings; it is not, by itself, a complete long-term memory system.
+
+The OCI OpenAI-compatible base URL documented for these endpoints is:
+
+`https://inference.generativeai.${region}.oci.oraclecloud.com/openai/v1`
+
+- Responses endpoint: `/responses`
+- Conversations endpoint: `/conversations`
+- Chat Completions endpoint: `/chat/completions`
+
+Use the current Oracle quick-start and SDK examples for the correct authentication, region, project, request fields, and supported options.
+
+## 8. Agent memory and context management
+
+### 8.1 Short-term memory / conversation history
+- Stores or reuses conversation history across turns through the Conversations API and Responses API.
+- Lets the application include prior turns as context rather than treating each request as completely unrelated.
+- Data retention is configurable. Oracle documentation describes response and conversation retention settings, with a maximum of 720 hours (30 days) in the documented configuration; verify the current limit for your project/region.
+- Conversation history can become large and increase token use and latency.
+
+### 8.2 Short-term memory compaction
+- When enabled in the project configuration, compaction summarizes earlier conversation history into a smaller representation.
+- This can reduce context size, token use, and latency while preserving useful context.
+- Compaction is not a guarantee that every detail will be retained. Critical facts should be stored or retrieved explicitly when exact recall matters.
+
+### 8.3 Long-term memory
+- OCI Generative AI supports configurable long-term memory that extracts key information from conversations and stores it for later retrieval.
+- The documented configuration uses a unique **`subject_id` within a project** to associate durable memory with a subject.
+- Stored information is embedded for semantic retrieval.
+- Long-term memory is distinct from a conversation ID and from a vector store containing enterprise documents.
+- Apply consent, retention, access-control, deletion, and privacy rules appropriate to the data being stored.
+
+### 8.4 Three things not to confuse
+- **Conversation history:** what was said in a conversation.
+- **Long-term memory:** selected information retained for future retrieval across conversations for a subject.
+- **Knowledge retrieval / RAG:** search across source documents or indexed enterprise knowledge to answer a question.
+
+## 9. Foundational agent building blocks
+
+| Building block | Purpose | Do not confuse it with |
+|---|---|---|
+| **Files API** | Upload and manage files used in supported agent workflows | A full enterprise document permission system by itself |
+| **Vector Stores API** | Index content as embeddings and retrieve relevant passages semantically | The generative model itself |
+| **Containers API** | Provide secure, stateful sandbox environments for supported code execution and data processing | A general-purpose production application host |
+| **Container Files API** | Persist/manage files within supported container execution workflows | Enterprise-wide durable file storage |
+| **Function Calling** | Allow a model to request an application-defined function | The model directly executing arbitrary business code |
+| **MCP Calling** | Connect to supported remote MCP servers and tools | Automatic access to every enterprise system |
+| **NL2SQL** | Support natural-language-to-SQL workflows for supported enterprise data scenarios | General-purpose retrieval over all unstructured documents |
+
+A vector store is useful for semantic retrieval, but enterprise RAG also needs ingestion, chunking, metadata, access filtering, refresh strategy, source attribution, and evaluation.
+
+## 10. Security and governance
+
+### 10.1 IAM and least privilege
+- OCI IAM policies determine which identities or groups can access or manage resources.
+- Policies can be scoped to a tenancy or compartment, depending on the policy statement and supported resource type.
+- Grant only the permissions needed for the task. Separate administration, deployment, invocation, data access, and runtime permissions where practical.
+- A broad policy such as `manage generative-ai-family` can be appropriate for a setup exercise, but it is broader than the permissions a production caller usually needs. Follow the least-privilege policy guidance for the exact operation.
+
+**Example policy pattern from Oracle's quick start** (for setup only; review the scope before production use):
+
+```text
+allow group <your-group-name> to manage generative-ai-family in compartment <your-compartment>
+```
+
+Do not copy this blindly into production. Replace placeholders and narrow permissions according to the official IAM policy reference.
+
+### 10.2 Private endpoints and network security
+- A **private endpoint** provides private network access to supported OCI Generative AI models through a VCN and private IP/FQDN.
+- Network Security Groups, security lists, routing, DNS, and connectivity determine whether a client can reach it.
+- A **model endpoint** and a **private endpoint** are different: the model endpoint exposes a model hosted on a dedicated cluster; the private endpoint supplies the private network path.
+- Hosted agent applications also have their own networking configuration and may support private invocation endpoints.
+- Private networking does not replace IAM authentication or authorization.
+
+### 10.3 Guardrails
+OCI Generative AI documents configurable guardrails for:
+- **Content moderation:** detects content that violates configured policies.
+- **Prompt injection detection:** identifies potentially malicious instructions in user input or retrieved content.
+- **PII detection:** identifies supported personally identifiable information.
+
+Guardrails may be configured in different ways depending on the model access mode and endpoint. Oracle documents `Inform` and `Block` behavior for supported configurations. Do not assume guardrails are automatically enabled for every model or request: configure and test them explicitly.
+
+Guardrails reduce risk; they do not guarantee that every unsafe or sensitive output will be caught. Also implement authorization, input validation, output validation, safe tool design, and human review where needed.
+
+### 10.4 Tool security
+- Treat retrieved documents and user input as untrusted data.
+- Do not let a prompt alone authorize access to a database, API, or file.
+- Validate arguments, check the caller's permissions, use scoped credentials, apply timeouts and quotas, and log sensitive actions appropriately.
+- Require confirmation or human approval for high-impact or irreversible operations when appropriate.
+- Use sandboxed code execution for supported untrusted computation; do not assume a sandbox automatically makes external network calls or data access safe.
+
+### 10.5 Audit and observability
+Use OCI logging, monitoring, and audit capabilities that are available and configured for the chosen services. Capture application-level traces and business events where needed. Track:
+- Request volume, latency, failures, throttling, and timeouts.
+- Model/tool usage and cost drivers.
+- Tool-call success/failure and retry counts.
+- Guardrail outcomes and access denials.
+- Deployment health and scaling events.
+
+Do not log secrets, access tokens, or unnecessary sensitive conversation content. “Observability” is not one single agent feature; coverage depends on which OCI services and application instrumentation you enable.
+
+## 11. Scaling and reliability
+
+For hosted agentic applications, OCI lets you configure scaling behavior, including minimum and maximum replicas and supported autoscaling metrics. Actual resource use changes with the number of running replicas.
+
+Good production practices:
+- Set reasonable request timeouts and retry only transient failures.
+- Use bounded exponential backoff and avoid retry storms.
+- Make tool operations idempotent where possible.
+- Handle throttling and service errors explicitly.
+- Set concurrency and resource limits appropriate to the workload.
+- Test deployment updates and rollback procedures.
+- Monitor latency, errors, and replica scaling under representative load.
+
+
+
+## 12. End-to-end architecture example
+
+**Use case:** an employee policy assistant.
+
+1. Employee uses a web or Teams-like front end.
+2. The front end authenticates the employee and sends the request to the application.
+3. The application verifies identity and permissions.
+4. The agent uses OCI Responses API for supported model interaction and tool orchestration, or calls a custom agent hosted as an OCI Generative AI application.
+5. The agent retrieves approved policy passages from a configured vector store or another authorized source.
+6. If employee-specific information is needed, the agent requests a function/API call; the application validates permissions before executing it.
+7. Guardrails and application-level checks evaluate relevant input/output risks.
+8. The application returns an answer with citations or source references where supported.
+9. Logs, metrics, and audit records capture operational outcomes without unnecessarily exposing sensitive data.
+
+**Core security rule:** the user identity and application authorization—not the model's own judgment—must determine which employee records and enterprise documents the user can access.
+
+## 13. Common interview / exam distinctions
+
+| Question | Correct distinction |
+|---|---|
+| Need a model response and supported tool workflow? | Start with the Responses API |
+| Need a persistent multi-turn conversation object? | Conversations API plus Responses API |
+| Need a simpler stateless chat interface? | Chat Completions API may fit |
+| Need to host your own framework/runtime as a container? | OCI Generative AI hosted application and deployment |
+| Need semantic retrieval from documents? | Embeddings + vector store/search; often followed by reranking and generation |
+| Need to reorder retrieved passages for a query? | Rerank model |
+| Need durable information across separate conversations? | Configured long-term memory, not just a conversation ID |
+| Need to reduce a long chat's context size? | Short-term memory compaction, if enabled |
+| Need private network access to a model? | Configure a supported private endpoint and VCN connectivity |
+| Need to block or flag unsafe content / prompt injection / PII? | Configure supported guardrails and add application-level controls |
+| Does function calling mean the model executes your API? | No. The runtime/application executes the function and must enforce authorization |
+| Does a private endpoint replace IAM? | No. Network access and identity authorization are separate controls |
+| Does a vector store automatically enforce source-system permissions? | Do not assume so; design and test access-aware retrieval |
+
+
+
+## 15. Official Oracle references
+
+Use these as the source of truth because OCI features, model availability, limits, and APIs can change.
+
+- [Enterprise AI Agents in OCI Generative AI](https://docs.oracle.com/en-us/iaas/Content/generative-ai/agents.htm)
+- [OCI Responses API](https://docs.oracle.com/en-us/iaas/Content/generative-ai/responses-api.htm)
+- [OCI Conversations API](https://docs.oracle.com/en-us/iaas/Content/generative-ai/conversations-api.htm)
+- [Tools supported by OCI Responses API](https://docs.oracle.com/en-us/iaas/Content/generative-ai/tool-support.htm)
+- [Hosted Applications and Deployments](https://docs.oracle.com/en-us/iaas/Content/generative-ai/applications-deployments.htm)
+- [Building Agents and foundational building blocks](https://docs.oracle.com/en-us/iaas/Content/generative-ai/building-agents.htm)
+- [OCI Generative AI models](https://docs.oracle.com/en-us/iaas/Content/generative-ai/models.htm)
+- [On-demand and dedicated modes](https://docs.oracle.com/en-us/iaas/Content/generative-ai/modes.htm)
+- [Guardrails](https://docs.oracle.com/en-us/iaas/Content/generative-ai/guardrails.htm)
+- [Private endpoints](https://docs.oracle.com/en-us/iaas/Content/generative-ai/private-endpoint.htm)
+- [Oracle IAM policies for OCI Generative AI](https://docs.oracle.com/en-us/iaas/Content/generative-ai/iam-policies.htm)
+
+**Study recommendation:** learn the differences between the Responses API, Conversations API, hosted applications, model access modes, memory types, tool execution, IAM, private endpoints, and guardrails first. These distinctions are more useful than memorizing broad statements such as “OCI manages everything.”
+
