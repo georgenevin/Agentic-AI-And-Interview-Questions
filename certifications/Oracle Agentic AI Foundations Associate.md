@@ -1,11 +1,11 @@
-# AI Agents, LangChain Agents and MCP: Reviewed Study Notes
+# AI Agents, LangChain, MCP and the OpenAI Agent Stack: Reviewed Study Notes
 
 **Contents**
 - Part 1: AI agent fundamentals
 - Part 2: LangChain agent and what `invoke()` does
 - Part 3: Sample conversation JSON (one full tool-calling loop)
 - Part 4: Model Context Protocol (MCP), including a full JSON-RPC session sample
-- Appendix: Corrections made to the original notes
+- Part 5: OpenAI agent stack (Responses API, Agents SDK), including sample flows (function call, handoff, tripwire)
 
 ---
 
@@ -642,3 +642,443 @@ A full session between a client and a small `math-server`: handshake, discovery,
     }
   }
 ]
+```
+
+A standalone copy is in `mcp_session_sample.json`.
+
+---
+
+# Part 5: OpenAI agent stack (Responses API + Agents SDK)
+
+> Model names and API details change quickly. The facts here were checked in late October 2026. Verify the model lineup and SDK parameters against OpenAI's docs for your version.
+
+## 5.1 Stack at a glance
+
+| Layer | What it is | You write the loop? |
+|---|---|---|
+| **Models** | GPT-5.x reasoning family (GPT-5.6 Sol / Terra / Luna as of July 2026; GPT-5.5 is the previous generation); GPT-4.1 is older and non-reasoning | n/a |
+| **Responses API** | Core API: model call + built-in tools + function calling + optional server-side state | **Yes** |
+| **Agents SDK** | Framework: agent loop, handoffs, guardrails, sessions, tracing | **No** |
+
+- "Reasoning vs non-reasoning" is a spectrum: GPT-5-series models take a `reasoning.effort` setting (from none up to high or higher). Raise it only when evals show a measurable gain, since it costs latency and tokens (reasoning tokens are billed as output).
+- Tiered models map onto the **two-tier pattern** from Part 1: a cheap, fast tier for routing and guardrail checks, the flagship tier for hard reasoning. Check current pricing first.
+
+## 5.2 Responses API
+
+- Endpoint `/v1/responses`. You send `input` and get structured `output` items (messages, function calls, reasoning items).
+- OpenAI recommends it for reasoning, tool-calling, and multi-turn use cases. Chat Completions remains supported, but new features land on Responses first.
+- **Assistants API:** its shutdown date (26 Aug 2026) has passed, so nothing new should use it. Migration map: Assistants → Prompts, Threads → Conversations, Runs → Responses, Run-Steps → Items.
+- **Single call, not "text only":** one request is one model call, but it supports built-in tools, function calling, structured output, streaming, and multi-turn state. The difference from the Agents SDK is **who owns the loop**.
+
+**Conversation chaining**
+- Chat Completions is stateless: you resend the full history every call.
+- Responses: pass `previous_response_id` and the server links the earlier context (`store` must be enabled). A durable Conversations API also exists. For stateless or zero-data-retention flows, pass back the returned output items yourself.
+- **Cost reality:** chaining saves code and bandwidth, not input tokens. Earlier context in the chain is still processed and billed as input (confirm in OpenAI's conversation-state docs). Real cost levers: prompt caching (static prompt first, dynamic last) and compaction.
+- Tools are not inherited, so resend them on each call.
+
+**Built-in (hosted) tools**
+- `{"type": "web_search"}`, `{"type": "file_search"}`, `{"type": "code_interpreter"}`, plus others such as remote MCP and computer use
+- The model decides when to use them (you can force it with `tool_choice`). They run **on OpenAI's side**, so you don't execute them.
+- Available on Responses but not Chat Completions, and metered separately from tokens.
+
+**Function calling** works as in Part 1: the model returns a `function_call` item with `call_id`, `name`, and `arguments` (a JSON **string**). Your code runs the tool and sends back a `function_call_output` with the same `call_id`. See sample 5.9.
+
+## 5.3 Agents SDK
+
+**Core concepts**
+- **Agent**: LLM + instructions + tools, plus handoffs, guardrails, `output_type`
+- **Runner**: executes the agent loop
+- **Tools**: function tools, agents as tools, hosted tools
+- **Handoffs**: transfer control between agents
+- **Guardrails**: validate input, output, and tool calls
+- **Sessions**: memory across runs (e.g. `SQLiteSession`)
+- **Tracing**: records what the agent did
+
+It is open source, available in Python and JS/TS, and **provider-agnostic** (Responses, Chat Completions, and 100+ other LLMs). It also supports MCP servers, which connects to Part 4.
+
+**The loop (`Runner.run`)**: the runner calls the LLM with the agent's model, settings, and message history. Each turn has one of three outcomes:
+1. **Final output** → loop ends
+2. **Handoff** → current agent switches, loop continues
+3. **Tool calls** → SDK runs them, appends results, loop continues
+
+Whether to call a tool is the model's choice **every turn**; an agent with no tools simply answers directly. Use `max_turns` (default 10, check your version) to prevent runaway loops. It raises `MaxTurnsExceeded` when hit, which addresses the "runaway execution" threat from section 1.5.
+
+```python
+from agents import Agent, Runner, function_tool
+
+@function_tool
+def get_weather(city: str) -> str:
+    """Get the current weather for a city."""   # docstring + type hints become the schema
+    return f"Sunny in {city}"
+
+agent = Agent(name="Assistant", instructions="Be concise.", tools=[get_weather])
+result = Runner.run_sync(agent, "Weather in Paris?")   # async: await Runner.run(...)
+print(result.final_output)
+```
+
+**Tool types**
+| Type | Meaning |
+|---|---|
+| **Function tools** | Your Python functions; the LLM chooses based on the description (vague docstring means wrong choice) |
+| **Agents as tools** | `agent.as_tool(...)`: one agent called by another |
+| **Hosted tools** | Run by OpenAI (web search, file search, code interpreter), available with OpenAI Responses models |
+
+**Responses API vs Agents SDK**
+| | Responses API | Agents SDK |
+|---|---|---|
+| Loop | You write it | SDK runs it |
+| Multi-agent, handoffs | Build yourself | Built in |
+| Guardrails, tracing | Build yourself | Built in |
+| Best for | One-shot tasks, simple tool use, full control | Multi-step loops, multiple agents, safety and observability |
+
+## 5.4 Multi-agent patterns
+
+| | **Handoff** (peer-to-peer) | **Manager** (centralized) |
+|---|---|---|
+| Control | Receiving agent **takes over** the conversation | Manager **keeps control**, calls specialists as tools |
+| Mechanism | `handoffs=[...]` (a tool call like `transfer_to_<agent>`) | `agent.as_tool(...)` |
+| Best for | Triage and routing to a specialist who owns the rest of the chat | Combining several specialists' outputs, consistent final answer, final guardrails |
+
+```python
+history_tutor = Agent(name="History Tutor", handoff_description="History questions",
+                      instructions="Answer history questions.")
+math_tutor = Agent(name="Math Tutor", handoff_description="Math questions",
+                   instructions="Solve math problems step by step.")
+
+triage_agent = Agent(
+    name="Triage Agent",
+    instructions="Route the user to the right specialist.",
+    handoffs=[history_tutor, math_tutor],
+    model="...",   # a cheap, fast model is usually enough for routing
+)
+
+manager = Agent(
+    name="Manager",
+    instructions="Use the tools to answer, then write one combined reply.",
+    tools=[history_tutor.as_tool(tool_name="ask_history", tool_description="History expert")],
+)
+```
+
+- A handoff is a specialized tool call; the specialist sees the conversation history by default.
+- `handoff_description` on the specialists helps the triage agent choose.
+- **Architect note:** every handoff or sub-agent call adds LLM calls, tokens, and latency. Start with **one agent and good tools**, and split only when instructions or tools get too large or domains need isolation.
+
+## 5.5 Guardrails
+
+- **Input guardrails**: run on the initial user input, **first agent only**
+- **Output guardrails**: run on the final output, **last agent only**
+- **Tool guardrails**: run before and after each custom function-tool call, which covers the gaps in multi-agent chains
+- A guardrail is a **function**, not necessarily an agent. It often uses a small helper agent, but it can be plain code. It returns `GuardrailFunctionOutput(output_info, tripwire_triggered)`.
+- **Tripwire:** when `tripwire_triggered` is true, the runner immediately raises `InputGuardrailTripwireTriggered` or `OutputGuardrailTripwireTriggered` and halts execution. Catch it with `try/except` and return a safe response.
+- **Execution mode matters:** by default an input guardrail runs **in parallel** with the agent. That saves latency, but the agent may already have started (spent tokens, even called tools). For anything with side effects, use **blocking** mode (`run_in_parallel=False`) so the guardrail finishes first. Output guardrails always run after the agent completes, so they have no parallel option.
+- Guardrails complement, not replace, the code-enforced controls from section 1.5.
+
+```python
+from pydantic import BaseModel
+from agents import (Agent, Runner, GuardrailFunctionOutput, RunContextWrapper,
+                    TResponseInputItem, input_guardrail,
+                    InputGuardrailTripwireTriggered)
+
+class HomeworkCheck(BaseModel):
+    is_homework: bool
+    reasoning: str
+
+checker = Agent(name="Homework checker", output_type=HomeworkCheck,
+                instructions="Is the user asking a homework question?",
+                model="...")   # small, cheap model
+
+@input_guardrail(run_in_parallel=False)   # blocking; verify param name in your SDK version
+async def homework_only(ctx: RunContextWrapper, agent: Agent,
+                        input: str | list[TResponseInputItem]) -> GuardrailFunctionOutput:
+    result = await Runner.run(checker, input, context=ctx.context)
+    return GuardrailFunctionOutput(
+        output_info=result.final_output,
+        tripwire_triggered=not result.final_output.is_homework,
+    )
+
+triage_agent.input_guardrails = [homework_only]   # or pass input_guardrails=[...] when creating
+
+try:
+    await Runner.run(triage_agent, "Write my holiday itinerary")
+except InputGuardrailTripwireTriggered:
+    print("Blocked: not a homework question")
+```
+
+## 5.6 Tracing
+
+- On by default. View runs in the OpenAI dashboard (platform.openai.com → Traces).
+- Records each step as spans: LLM generations, tool calls, handoffs, guardrail checks. This is the **observability** layer from section 1.5.
+- Extensible: custom spans and external destinations such as Logfire, AgentOps, and Braintrust.
+- Traces can contain prompts and tool data. Check the sensitive-data settings and your data-retention policy, as tracing may be limited under zero-data-retention setups.
+
+## 5.7 When to use what
+
+- **Responses API alone:** one-shot tasks, simple tool use, or when you want full control of the loop
+- **Agents SDK:** multi-step loops, multiple agents, handoffs, guardrails, built-in tracing
+- **LangChain (Part 2):** an alternative orchestrator with a unified interface across providers
+- **MCP (Part 4):** how any of these frameworks connect to external tools and data
+
+## 5.8 How it connects to earlier parts
+
+| Concept | Part 1 / 2 | OpenAI stack |
+|---|---|---|
+| Loop | Reason → act → observe | `Runner` loop |
+| Tool call id | `id` links result to request | `call_id` in `function_call` / `function_call_output` |
+| Tool schema | `@tool` docstring + type hints | `@function_tool` docstring + type hints |
+| Stateless model | Resend full history | Resend, or `previous_response_id` / sessions |
+| Guardrails | Code-enforced, layered | Input / output / tool guardrails + tripwires |
+| Observability | Log traces, tool calls, cost | Tracing dashboard |
+
+## 5.9 Sample flows (JSON)
+
+> Simplified for learning: IDs and token counts are illustrative, and the two Agents SDK traces are conceptual (not the real trace export format). The Responses API bodies follow the real request and response shapes.
+
+### Responses API: function call round trip
+
+| Step | What happens |
+|---|---|
+| 1 | Request with `instructions`, `input`, and tools (a function tool + hosted `web_search`) |
+| 2 | Response contains a `function_call` item (`call_id`, `name`, `arguments` as a JSON string). The model only **requested** the tool |
+| 3 | Your code runs the tool, then sends `function_call_output` with the same `call_id` and `previous_response_id` |
+| 4 | Final `message` item with `output_text`. Note `input_tokens` rose, since the chain's context is still billed |
+
+```json
+[
+  {
+    "step": 1,
+    "direction": "your app -> POST /v1/responses",
+    "body": {
+      "model": "your-model-name",
+      "instructions": "You are a helpful travel assistant. Use tools for live data. Never guess current conditions.",
+      "input": [
+        {
+          "role": "user",
+          "content": "What's the weather in Paris right now? Do I need an umbrella?"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Get the current weather for a city. Use when the user asks about current conditions.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City name, e.g. 'Paris'"
+              }
+            },
+            "required": [
+              "city"
+            ]
+          }
+        },
+        {
+          "type": "web_search"
+        }
+      ],
+      "store": true
+    }
+  },
+  {
+    "step": 2,
+    "direction": "OpenAI -> your app (response)",
+    "body": {
+      "id": "resp_001",
+      "object": "response",
+      "status": "completed",
+      "output": [
+        {
+          "type": "reasoning",
+          "id": "rs_001",
+          "summary": []
+        },
+        {
+          "type": "function_call",
+          "id": "fc_001",
+          "call_id": "call_abc123",
+          "name": "get_weather",
+          "arguments": "{\"city\": \"Paris\"}"
+        }
+      ],
+      "usage": {
+        "input_tokens": 180,
+        "output_tokens": 95,
+        "output_tokens_details": {
+          "reasoning_tokens": 70
+        }
+      }
+    },
+    "note": "The model only REQUESTED the tool. Your code runs get_weather. Note 'arguments' is a JSON string here."
+  },
+  {
+    "step": 3,
+    "direction": "your app -> POST /v1/responses (send the tool result)",
+    "body": {
+      "model": "your-model-name",
+      "previous_response_id": "resp_001",
+      "input": [
+        {
+          "type": "function_call_output",
+          "call_id": "call_abc123",
+          "output": "{\"temp_c\": 12, \"condition\": \"Light rain\", \"rain_chance_pct\": 80}"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Get the current weather for a city. Use when the user asks about current conditions.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City name, e.g. 'Paris'"
+              }
+            },
+            "required": [
+              "city"
+            ]
+          }
+        },
+        {
+          "type": "web_search"
+        }
+      ]
+    },
+    "note": "Only the NEW item is sent. The server links earlier context via previous_response_id. Resend tools each call (they are not inherited)."
+  },
+  {
+    "step": 4,
+    "direction": "OpenAI -> your app (final response)",
+    "body": {
+      "id": "resp_002",
+      "object": "response",
+      "status": "completed",
+      "previous_response_id": "resp_001",
+      "output": [
+        {
+          "type": "message",
+          "role": "assistant",
+          "content": [
+            {
+              "type": "output_text",
+              "text": "It's 12°C in Paris with light rain and an 80% chance of more. Yes, take an umbrella."
+            }
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 310,
+        "output_tokens": 40,
+        "output_tokens_details": {
+          "reasoning_tokens": 0
+        }
+      }
+    },
+    "note": "Illustrative numbers. input_tokens is higher than in step 2 because the earlier context in the chain is still processed and billed as input. Check OpenAI's conversation-state docs for current billing details."
+  }
+]
+```
+
+### Agents SDK: triage handoff
+
+```json
+{
+  "scenario": "Triage agent hands off a math question to a specialist.",
+  "note": "Simplified conceptual trace for learning. It is NOT the actual wire format or the trace export format.",
+  "agents": [
+    "Triage Agent (first agent)",
+    "Math Tutor (specialist)",
+    "History Tutor (specialist)"
+  ],
+  "user_input": "Can you help me solve 2x + 3 = 11?",
+  "steps": [
+    {
+      "step": 1,
+      "actor": "Runner",
+      "action": "Run input guardrails (first agent only)",
+      "result": "passed"
+    },
+    {
+      "step": 2,
+      "actor": "Triage Agent (LLM call 1)",
+      "output": {
+        "type": "function_call",
+        "name": "transfer_to_math_tutor",
+        "arguments": "{}"
+      },
+      "meaning": "A handoff is a specialized tool call."
+    },
+    {
+      "step": 3,
+      "actor": "Runner",
+      "action": "Handoff detected: current agent becomes Math Tutor, conversation history carries over",
+      "loop": "continues"
+    },
+    {
+      "step": 4,
+      "actor": "Math Tutor (LLM call 2)",
+      "output": {
+        "type": "message",
+        "text": "Subtract 3 from both sides: 2x = 8. Divide by 2: x = 4."
+      }
+    },
+    {
+      "step": 5,
+      "actor": "Runner",
+      "action": "Final output (no tool calls, no handoff): loop ends. Output guardrails run for the LAST agent (Math Tutor).",
+      "result": "passed"
+    }
+  ],
+  "result.final_output": "Subtract 3 from both sides: 2x = 8. Divide by 2: x = 4."
+}
+```
+
+### Agents SDK: guardrail tripwire
+
+```json
+{
+  "scenario": "Blocking input guardrail rejects an off-topic request.",
+  "note": "Simplified conceptual trace for learning.",
+  "user_input": "Write my holiday itinerary",
+  "guardrail": {
+    "name": "homework_only",
+    "mode": "blocking (run_in_parallel=False)"
+  },
+  "steps": [
+    {
+      "step": 1,
+      "actor": "Runner",
+      "action": "Run input guardrail homework_only on the first agent's input (agent has NOT started)"
+    },
+    {
+      "step": 2,
+      "actor": "Guardrail helper agent (small, cheap model)",
+      "output": {
+        "is_homework": false,
+        "reasoning": "Request is about travel planning, not homework."
+      }
+    },
+    {
+      "step": 3,
+      "actor": "Guardrail function",
+      "output": {
+        "tripwire_triggered": true
+      },
+      "meaning": "tripwire_triggered = not is_homework"
+    },
+    {
+      "step": 4,
+      "actor": "Runner",
+      "action": "Raise InputGuardrailTripwireTriggered and halt. Triage Agent was never called, so no tokens spent and no tools run.",
+      "handled_by": "Your try/except returns a safe message to the user."
+    }
+  ],
+  "parallel_mode_difference": "With run_in_parallel=True (default), the Triage Agent starts at the same time as the guardrail. The tripwire still halts execution when it fires, but the agent may already have spent tokens or called tools. Use blocking mode for anything with side effects."
+}
+```
+
+A standalone copy of all three is in `openai_stack_samples.json`.
