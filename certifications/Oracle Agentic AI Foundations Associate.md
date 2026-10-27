@@ -498,23 +498,6 @@ Enabling MCP does not give every client access to all tools. Authentication depe
 
 ---
 
-# 9. Main corrections applied
-
-1. Qualified statements that agents are always autonomous, stateful, self-correcting, or make at least one LLM call per iteration.
-2. Clarified that tool schemas are model-facing descriptions, while the runtime executes tool code.
-3. Qualified claims that ReAct prevents hallucinations; tools can reduce unsupported answers but cannot eliminate errors.
-4. Clarified that LangChain APIs changed and that `create_agent` is the current v1 pattern in the reviewed docs.
-5. Separated JSON-RPC request IDs from model tool-call IDs.
-6. Added an MCP protocol-version warning: the source's sample uses the 2025-06-18 style and may not match later revisions.
-7. Clarified MCP transport/security requirements, including stdout discipline for stdio and authentication/Origin checks for HTTP.
-8. Removed unsupported blanket claims about OpenAI model family names and provider compatibility. Verify model names and SDK details in current official docs.
-9. Distinguished Responses API function calling from hosted tools.
-10. Qualified guardrail timing and SDK parameter details as version-dependent.
-11. Consolidated OCI material and separated OCI Generative AI hosting from Oracle AI Database Vector Search, Agent Factory, and MCP.
-12. Corrected vector-distance terminology and cautioned against fixed embedding dimensions or calibrated reranker scores.
-13. Clarified that enabling MCP does not grant blanket database access.
-14. Added security and version-check notes wherever behavior depends on configuration.
-
 ---
 
 # Official documentation
