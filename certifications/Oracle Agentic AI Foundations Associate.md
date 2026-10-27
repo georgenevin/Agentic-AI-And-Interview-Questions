@@ -1,394 +1,197 @@
-# AI Agents, LangChain, MCP and the OpenAI Agent Stack: Reviewed Study Notes
+# AI Agents, LangChain, MCP, OpenAI Agents, and Oracle AI Database
 
-**Contents**
-- Part 1: AI agent fundamentals
-- Part 2: LangChain agent and what `invoke()` does
-- Part 3: Sample conversation JSON (one full tool-calling loop)
-- Part 4: Model Context Protocol (MCP), including a full JSON-RPC session sample
-- Part 5: OpenAI agent stack (Responses API, Agents SDK), including sample flows (function call, handoff, tripwire)
+
+This guide consolidates the uploaded notes into a cleaner reference. It preserves the main concepts, corrects misleading statements, and flags details that depend on framework/API version. Check official documentation before copying code into a project.
 
 ---
 
-# Part 1: AI agent fundamentals
+# 1. AI agent fundamentals
 
-## 1.1 What is an AI agent?
+## What is an AI agent?
 
-**Agent = LLM + Tools + Memory + Loop**, wrapped in an orchestration layer.
+A practical mental model is:
 
-| Part | Role | Analogy |
+**Agent = model + instructions + tools + context/state + orchestration**
+
+An agent receives a goal, decides what to do next, can call approved tools, observes the results, and continues until it finishes or reaches a limit. Not every agent is highly autonomous; autonomy depends on the workflow and permissions provided.
+
+| Component | Responsibility |
+|---|---|
+| Model (LLM) | Interprets the request, proposes actions/tool calls, interprets results, generates output |
+| Instructions | Define role, scope, behavior, and constraints |
+| Tools | Provide access to APIs, databases, search, calculations, or actions |
+| Orchestrator/runtime | Executes the loop, routes calls, manages state, errors, retries, and stop conditions |
+| Context and memory | Supplies conversation history and, where configured, durable facts or retrieved knowledge |
+| Guardrails/application logic | Enforces permissions, validation, limits, approvals, and output checks |
+| Observability | Records information needed to diagnose errors, latency, usage, and cost |
+
+Typical cycle: **Receive input → decide → request action → execute tool → observe result → continue or respond.**
+
+### Key distinctions
+- Training data, retrieved documents, and live tool results are different information sources; “knowledge = training data + tools” is too simplistic.
+- The context window is the information supplied to a model call; it is not automatically persistent memory.
+- Conversation history stores turns. Long-term memory stores selected information for later retrieval. RAG retrieves external source material to ground a response.
+- The model may request a tool call; the application/framework or remote tool server executes it.
+- A tool call is not safe just because the model selected it. Validate arguments and authorize actions outside the model.
+
+### Failure modes and controls
+Common failures include loops, incorrect tool selection, malformed arguments, stale retrieval, prompt injection, context overflow, cascading errors, excessive cost/latency, and unsafe side effects.
+
+Use bounded iterations, timeouts, rate limits, token/cost budgets, schema validation, least-privilege credentials, idempotent tools where possible, human approval for high-impact actions, and evaluation/tracing.
+
+## Reasoning patterns
+
+| Pattern | Description | Caution |
 |---|---|---|
-| LLM | Understands, plans, decides | Brain |
-| Tools | Read data and take actions in the outside world | Hands |
-| Loop (orchestrator) | Runs the cycle, routes calls, manages state | Nervous system |
+| Chain-of-thought prompting | Asks a model to work through a problem before answering | A generated explanation is not guaranteed to be a faithful record of the model's internal process |
+| ReAct | Alternates between reasoning, an action, and an observation | Tool results can improve grounding but do not guarantee correctness |
+| Tree of Thoughts | Explores and evaluates multiple candidate paths | Often more expensive and slower |
 
-**Key properties**
-- **Goal-directed**: works toward an objective, not just answering one prompt
-- **Autonomous**: decides the next step dynamically
-- **Iterative**: runs in a loop until done or stopped
-- **Self-correcting**: observes results and retries on error
-- **Stateful**: keeps context across steps
-- **Knowledge** = training data + live tools
-- **Memory** = working (context window) + persistent (external store, e.g. vector DB or database)
-- **Planning**: multi-step planning and iteration
-- **Actions**: search, compute, call APIs, write code
+These are conceptual patterns, not required parts of every agent framework. Native tool calling can implement an agent loop without exposing a literal Thought/Action/Observation transcript.
 
-**Cycle:** Perceive → Reason → Act → Observe → repeat
+## Tool-calling flow
+1. The application supplies conversation context and tool schemas.
+2. The model returns either a normal response or a structured tool-call request.
+3. The application/framework validates and executes the tool.
+4. The result is returned to the model as an observation.
+5. The model responds or requests another tool call.
 
-- **Perceive**: receive input or observation
-- **Reason**: choose the next step
-- **Act**: call a tool or respond to the user
-- **Observe**: read the tool result or feedback
+Tool schemas commonly contain a name, description, and parameter schema. In Python frameworks, type hints and a docstring may be used to construct the schema. Vague descriptions can lead to poor tool selection.
 
-**What can go wrong:** infinite loops, hallucinated tool calls or arguments, cost explosion, context overflow, compounding errors over long chains, goal drift.
-
-**Mitigations:** max iterations, token/cost budget, timeouts, loop detection, validated tool schemas.
+**Security rule:** prompts and model-level guardrails help, but are not a security boundary. Enforce permissions and critical business rules in code and the underlying systems.
 
 ---
 
-## 1.2 Components
+# 2. LangChain agents and `invoke()`
 
-### LLM (decision-maker)
-- Understands user intent, plans multi-step work, picks the tool and its arguments, interprets results, writes the final answer
-- Can be one or several models of any size, prompted with CoT and ReAct strategies
-- The same LLM can power different agents just by changing tools and prompts (no retraining)
-- Needs: reliable structured output / native tool calling, strong reasoning, large context window
-- Each iteration makes **at least 1 LLM call**, so there is a capability vs cost vs latency tradeoff
-- **Two-tier pattern:** cheap model for routing, capable model for hard reasoning
-- Newer reasoning models have built-in chain-of-thought training, which can improve agent reasoning
-
-### Tools (bridge to the real world)
-- APIs, database queries, search, code execution, etc.
-- Enable real-time data access and real-world actions
-- Turn an LLM from a text generator into an actor
-
-**Tool-calling flow**
-1. Developer defines tools as JSON schemas (name, description, parameters)
-2. Agent sends the schemas + user query to the LLM
-3. LLM decides: plain text answer **or** a tool call (name + arguments)
-4. **Your code** executes the tool. The LLM never runs it.
-5. Result goes back to the LLM as an observation
-
-### Loop / orchestrator
-- Runs reason → act → observe; decides whether to continue or stop
-- **Reasoning strategy**: applies CoT, ReAct, or another prompting framework to break the goal into steps
-- **Memory management**: short-term scratchpad for the session; long-term store for history and documents
-- **Tool routing**: select the tool, format the call, handle errors, feed results back
-- **State machine**: tracks position, completed steps, loops, and failures
-- **Safety and guardrails**: hard-coded policy rules that override model reasoning when needed
-
----
-
-## 1.3 Reasoning patterns
-
-| Pattern | How it works | Best for |
-|---|---|---|
-| **Chain of Thought (CoT)** | Step-by-step intermediate reasoning before the answer | Math, logic, step-by-step analysis |
-| **ReAct** | Interleaves Thought → Action → Observation | Tool selection, multi-step tasks, external API calls |
-| **Tree of Thoughts (ToT)** | Explores multiple branches, evaluates each, picks one (costly: many LLM calls) | Creative tasks, strategic planning, exploration |
-
-### CoT details
-- Prompting technique: instruct the LLM to reason step by step before answering
-- **Zero-shot:** add "think step by step" to the prompt
-- **Few-shot:** provide worked examples showing the reasoning
-- Benefits: better accuracy on complex tasks, easier debugging
-- Caveats: the trace is not guaranteed to be a faithful explanation of why the model answered; modern reasoning models already do this internally, so explicit prompting is often unnecessary
-- **Limitation (CoT alone):** uses only internal knowledge, so wrong knowledge gives wrong reasoning. It cannot verify against reality or act in the real world. This is the gap ReAct fills.
-
-### ReAct details
-- Uses intermediate reasoning (Thought) to decide when and how to act (Action), then reads the result (Observation)
-- Pros:
-  - Transparent, debuggable reasoning traces
-  - Tool calls ground reasoning in real data, which **reduces** (does not eliminate) hallucination
-  - Prevents the model from making up answers when it should look things up
-- Typical prompt: *"Think step by step. If you need information, call a tool. When the final answer is ready, present it."*
-
----
-
-## 1.4 Tool definition essentials (e.g. LangChain)
-
-- `@tool` wraps a function so the framework can register it as a callable tool (decorator name varies by framework)
-- **Type hints** (e.g. `a: float`) define parameter types in the schema
-- **Docstring** becomes the tool description, which is how the LLM decides when and how to use the tool. **Vague docstring leads to wrong tool choice.**
-- The framework converts the function into a JSON schema that is sent to the LLM with the user message. The LLM sees the schema and decides whether a tool call is needed.
-- The **return value** is not part of what the LLM sees up front; it comes back as the observation after execution.
-
----
-
-## 1.5 Safety and guardrails
-
-### Threats
-1. **Prompt injection**: hijacking the agent via crafted input
-   - *Direct*: the user types it
-   - *Indirect*: hidden in web pages, documents, emails, or tool output (the bigger risk for agents)
-2. **Tool misuse**: agent calls a tool with wrong or dangerous arguments
-3. **Memory poisoning**: malicious content stored in memory affects future behavior, including for other users
-4. **Data exfiltration**: agent tricked into leaking sensitive internal data through tool calls or responses
-5. **Runaway execution**: endless loops or excessive API calls cause cost overruns and system strain
-
-### Defense layers
-1. **Input validation**
-   - Treat all external or retrieved content as untrusted data
-   - PII detection, rate limiting
-2. **LLM-level guardrails**
-   - Safety system prompts and explicit instructions help, but are **not a security boundary** (they can be bypassed by injection)
-   - Enforce critical rules (permissions, spend limits, irreversible actions) **deterministically in code**
-3. **Tool boundaries**
-   - Least privilege: minimum necessary permission per tool
-   - Input validation on tool arguments
-   - Sandbox code execution
-   - **Human-in-the-loop** for irreversible actions
-4. **Output filtering**
-   - PII screening, content policy, relevance checks, citation and attribution checks
-   - Low-confidence outputs go to human review
-5. **Observability**
-   - Log traces, inputs, tool calls, outputs, errors, and cost
-
-**Rule of thumb:** match guardrails to the **impact of the actions the agent can take**, not how risky the query sounds. A read-only FAQ bot needs fewer controls than a finance agent that can move money, which needs all layers.
-
----
-
-# Part 2: LangChain agent
-
-## 2.1 Overview
-
-**Cycle:** Reason → Act → Observe → Repeat
-- **Reason**: decide what to do next (which tool, or answer directly)
-- **Act**: call a tool or respond to the user
-- **Observe**: read the tool result
-
-Key points:
-- Decides which tool to use, reasons across multiple steps, iterates until the goal is met
-- **The LLM never executes tools.** It generates a tool call request; LangChain (your process) runs the code.
-- `create_agent` (`from langchain.agents import create_agent`) builds the whole loop: call model → run tool if requested → feed result back → repeat
-- Built on LangGraph. The loop is a graph with a model node and a tools node.
-- It uses the provider's **native tool-calling API**, not the old text-based "Thought/Action" prompt format. It replaced the older `create_react_agent`, so older tutorials may show different imports.
-- With native tool calling, "Reason" is the model's decision to call a tool. Explicit thoughts appear only if the model emits them or is a reasoning model.
+In LangChain v1, `create_agent` creates an agent graph that calls a model and executes tools in a loop until a stopping condition is reached. It is built on LangGraph. Older tutorials may use older APIs such as `create_react_agent`; verify your installed version.
 
 ```python
 from langchain.agents import create_agent
 
-agent = create_agent(model="...", tools=[my_tool], system_prompt="...")
-result = agent.invoke({"messages": [{"role": "user", "content": "..."}]})
+def get_weather(city: str) -> str:
+    # Replace this demo with a real, authenticated weather provider.
+    return f"Weather data for {city} is not connected in this example."
+
+agent = create_agent(
+    model="provider:model-name",
+    tools=[get_weather],
+    system_prompt="You are a helpful assistant.",
+)
+
+result = agent.invoke({
+    "messages": [{"role": "user", "content": "What is the weather in Paris?"}]
+})
 ```
-*(Check your installed version's docs, as the API changed between v0.x and v1.)*
 
-## 2.2 Under the hood: what `agent.invoke()` does
+The model string and provider integration are placeholders. Configure the correct provider package and credentials.
 
-`invoke()` looks like one call but runs a **full loop** internally.
+## What `agent.invoke()` does
+1. Accepts the current input/state.
+2. Calls the model with message history and available tool schemas.
+3. If the model returns tool calls, resolves each tool name to a registered tool.
+4. Executes tool code in the application/runtime.
+5. Adds results as tool messages associated with their tool-call IDs.
+6. Calls the model again with updated history.
+7. Continues until there are no more tool calls or a limit/error stops the workflow.
 
-1. Your code calls `agent.invoke(...)`
-2. LangChain builds the request: system prompt + messages + tool definitions
-3. **Tool schemas are auto-generated** from each `@tool` function: name, docstring (description), and type hints (parameters)
-4. LangChain sends the request to the model API with two things:
-   - **messages**: the entire conversation so far
-   - **tools**: the list of functions the model is allowed to call
-5. The model reads the **whole conversation** (not just the last user message) and returns either:
-   - a **tool call request** (structured), or
-   - a **final text answer**
-6. LangChain inspects the response: **are there tool calls?**
-   - **Yes** → extract each call's `name`, `args`, `id`, then continue to step 7
-   - **No** → return the text answer to the user (loop ends)
-7. **Lookup:** LangChain keeps an internal **registry (a dict)** mapping tool names → tool objects (the function plus its schema). It finds the one matching `name`.
-8. **Execute:** the actual Python code runs in **your application process**, with `args`
-9. **Return the result** to the model as a **tool message** carrying the same `id`, so the model knows which call it answers
-10. LangChain sends the **full history again** (the model is **stateless**), including the new tool result
-11. Repeat from step 5 until the model responds with no tool calls
+A single `invoke()` can therefore perform multiple model calls and tool executions.
 
-**Why the `id` matters:** the model may request several tools at once (parallel calls). The **name** maps to the function; the **id** links each result back to its request. Without a framework, you would build this name-to-function mapping and id matching yourself.
-
-## 2.3 Things to remember
-
-- **Each step depends on the previous one**, since the growing history is the agent's working memory. Independent parallel tool calls are an exception.
-- **Cost and latency grow each iteration** because the full history is resent. Long loops risk hitting the context limit. Prompt caching and trimming or summarizing history help.
-- **Stop conditions:** the loop ends when the model returns no tool calls, or when a limit is hit (`recursion_limit`). Always set sensible limits.
-- **Memory across invocations** needs a checkpointer + `thread_id` (or manual history), not just `invoke()`.
-- **Tool errors:** decide whether to feed the error back to the model (lets it self-correct) or fail hard.
-- **Security:** tools run on your machine with your permissions, so apply the least-privilege, validation, and sandboxing rules from section 1.5.
-- **Unified interface:** one API across providers (OpenAI, Anthropic, etc.), but tool-calling reliability differs per model. Test the one you choose.
+- **Tool name** identifies which registered tool to execute.
+- **Tool-call ID** correlates the result with the request, especially when multiple calls are returned.
+- Independent tool calls may run in parallel.
+- The model is not running Python when it returns a tool call; the runtime executes the function.
+- `invoke()` alone does not guarantee memory across separate invocations. Persistent state typically requires a checkpointer/thread ID or explicitly supplied history.
+- Set sensible graph/recursion limits. Decide whether tool errors should be returned to the model for recovery or stop the workflow.
+- Long histories increase latency and token use; consider trimming, summarization, and prompt caching where supported.
 
 ---
 
-# Part 3: Sample conversation JSON
+# 3. Tool-call message example
 
-This is the **state of the request after one full loop**. It contains the system prompt, tool schema, earlier conversation history, the user's new prompt, the assistant's tool call, the tool result, and the final answer.
+This simplified example shows the logic, not one provider's exact wire format.
 
-> Field names are simplified. Real providers differ: OpenAI sends `arguments` as a JSON **string** inside `function`, while LangChain normalizes tool calls to `{name, args, id}` with `args` as a dict. A tool result is a message with `role: "tool"` (`ToolMessage` in LangChain).
-
-## 3.1 Walkthrough
-
-| Message | Role | What it is |
-|---|---|---|
-| 1 | `system` | System prompt: sets behavior and rules |
-| 2 | `user` | Earlier user turn (history) |
-| 3 | `assistant` | Earlier assistant reply (history), no tool calls |
-| 4 | `user` | New prompt for the agent |
-| 5 | `assistant` | **Tool call request**: `name`, `args`, `id`. No text yet |
-| 6 | `tool` | **Tool call response**: carries `tool_call_id` matching message 5 |
-| 7 | `assistant` | **Final answer**: no tool calls, so the loop ends |
-
-**Loop trace**
-- **LLM call 1:** receives messages 1-4 + tools → returns message 5 (tool call)
-- LangChain looks up `get_weather` in the registry and runs it with `{"city": "Paris", "units": "celsius"}`
-- **LLM call 2:** receives messages 1-6 (full history, since the model is stateless) → returns message 7 (no tool calls, loop stops)
-
-Note that message 7 reports **current** weather while the user travels **next week**. A good answer flags that mismatch, which is a good habit to test for in evaluation.
-
-## 3.2 JSON
+1. `system`: instructions.
+2. `user`: asks a question.
+3. `assistant`: returns a structured request to call `get_weather`.
+4. `tool`: contains the result and matching call ID.
+5. `assistant`: reads the result and answers.
 
 ```json
 {
-  "model": "your-model-name",
-  "tools": [
-    {
-      "name": "get_weather",
-      "description": "Get the current weather for a city. Use when the user asks about current conditions or what to wear/pack. Returns temperature, condition and rain chance.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "city": {
-            "type": "string",
-            "description": "City name, e.g. 'Paris'"
-          },
-          "units": {
-            "type": "string",
-            "enum": ["celsius", "fahrenheit"],
-            "description": "Temperature units"
-          }
-        },
-        "required": ["city"]
-      }
-    }
-  ],
-  "messages": [
-    {
-      "role": "system",
-      "content": "You are a helpful travel assistant. Use the available tools for live data such as weather. Never guess current conditions. If a tool fails, tell the user instead of inventing an answer."
-    },
-    {
-      "role": "user",
-      "content": "I'm planning a trip to Paris next week. Any tips?"
-    },
-    {
-      "role": "assistant",
-      "content": "Great choice! Book popular museums in advance, use the Metro for getting around, and carry a light jacket. Want help with an itinerary?",
-      "tool_calls": []
-    },
-    {
-      "role": "user",
-      "content": "What's the weather like there right now? Should I pack an umbrella?"
-    },
-    {
-      "role": "assistant",
-      "content": "",
-      "tool_calls": [
-        {
-          "id": "call_abc123",
-          "name": "get_weather",
-          "args": {
-            "city": "Paris",
-            "units": "celsius"
-          },
-          "type": "tool_call"
-        }
-      ]
-    },
-    {
-      "role": "tool",
-      "tool_call_id": "call_abc123",
-      "name": "get_weather",
-      "content": "{\"temp_c\": 12, \"condition\": \"Light rain\", \"rain_chance_pct\": 80}"
-    },
-    {
-      "role": "assistant",
-      "content": "Right now Paris is 12°C with light rain and an 80% chance of more. Since you travel next week, check the forecast closer to your dates, but a compact umbrella and a waterproof jacket are a safe bet.",
-      "tool_calls": []
-    }
-  ]
+  "id": "call_abc123",
+  "name": "get_weather",
+  "arguments": {
+    "city": "Paris",
+    "units": "celsius"
+  }
 }
 ```
 
-A standalone copy is in `agent_conversation_sample.json`.
+The actual API shape differs by provider. OpenAI Responses API function-call arguments, for example, are represented as a JSON string; frameworks may normalize them into a dictionary.
+
+Evaluation example: if a user asks about next week's weather but a tool returns only current weather, the agent must not present current conditions as a forecast. It should obtain forecast data or explain the limitation.
 
 ---
 
-# Part 4: Model Context Protocol (MCP)
+# 4. Model Context Protocol (MCP)
 
-## 4.1 What is MCP?
+## What MCP is
+The **Model Context Protocol (MCP)** is an open protocol for connecting AI applications to external tools and context. It uses JSON-RPC messages and standardizes tool discovery and invocation. MCP complements model function calling; it does not replace the model or agent orchestrator.
 
-- **Model Context Protocol**: an open standard, introduced by Anthropic, that gives AI applications one universal way to connect to external tools, data sources, and systems ("USB-C for AI")
-- Messages use **JSON-RPC 2.0**; the specification itself is open
-- Solves the **N×M integration problem**: instead of every app writing a custom integration for every tool, each app implements MCP once and each tool exposes MCP once
-- **MCP vs function calling:** they complement each other. MCP standardizes how tools are **discovered and served**. Function calling is how the **LLM requests** a tool. The host converts MCP tool definitions (`inputSchema`) into the LLM's tool schemas.
+- **Host:** AI application managing the model, user experience, and tool-use policy.
+- **Client:** component within the host that connects to an MCP server.
+- **Server:** exposes tools, resources, and/or prompts.
 
-## 4.2 Architecture
+The model does not directly speak MCP. The host supplies tool definitions to the model, interprets its choice, and asks the MCP client to invoke the selected server tool.
 
-| Role | What it is |
-|---|---|
-| **Host** | The AI application (Claude Desktop, VS Code, your own agent app). Manages the LLM, the UI, and user consent. |
-| **Client** | Created by the host. Each client has a **dedicated 1:1 connection** to one server. |
-| **Server** | Exposes tools, resources, and prompts. Can run **locally or remotely**. |
+### MCP vs function calling
+- Function calling is how the model returns a structured request to call a function.
+- MCP standardizes how an application discovers and calls tools exposed by a server.
+- A host can convert MCP tool schemas into the model provider's tool schema.
 
-The LLM never talks to MCP directly. Flow: user → host → LLM (with tool schemas from MCP) → tool call → client → `tools/call` → **server executes** → result → host → LLM.
+## Capabilities
+- **Tools:** actions the model can request, such as querying an API or performing a calculation.
+- **Resources:** contextual data identified by URI that the host/application may choose to read and provide.
+- **Prompts:** reusable prompt templates offered by the server.
 
-**How it fits your LangChain notes (Part 2):** the agent loop is the same. The only difference is who runs the tool. With plain `@tool` functions, **your process** runs the code. With MCP, the **MCP server** runs it, and the client just forwards the request and returns the result.
+Tool choice may be model-driven, but the protocol does not require every host to expose every tool automatically. Hosts can restrict tools or require approval.
 
-## 4.3 Core components
+## Lifecycle and JSON-RPC
+For protocol versions using the classic initialization handshake:
+1. Client sends `initialize` with protocol version, capabilities, and client information.
+2. Server responds with its version, capabilities, and server information.
+3. Client sends `notifications/initialized`.
+4. During operation, client discovers tools with `tools/list` and calls tools with `tools/call`.
+5. Client closes the transport when finished.
 
-| Component | Controlled by | What it is |
+**Version warning:** MCP evolves. Newer protocol revisions may change initialization, headers, session handling, or transport details. The sequence above describes the 2025-06-18 style used in the source sample, not every later revision. Pin the protocol/SDK version and use its matching official specification.
+
+- A JSON-RPC request has an `id` and expects a response.
+- A response echoes the request ID.
+- A notification has no ID and does not expect a response.
+- JSON-RPC request IDs correlate protocol messages; they differ from model tool-call IDs.
+
+### Error categories
+- **Tool execution error:** server returns a normal tool result with `isError: true`.
+- **Protocol error:** server returns a JSON-RPC `error` object, e.g. for an unknown method or invalid parameters.
+
+## Transports
+| Transport | How it works | Typical use |
 |---|---|---|
-| **Tools** | **Model** | Functions the AI can call to perform actions |
-| **Resources** | **Application** | Read-only data for context (files, README.md, DB records, GET-style endpoints), identified by URI; the host decides what goes into the context window |
-| **Prompts** | **User** | Reusable templates that structure LLM interactions (e.g. slash commands) |
+| stdio | Host launches a server process and exchanges newline-delimited JSON-RPC over stdin/stdout | Local developer tools |
+| Streamable HTTP | Server exposes an HTTP MCP endpoint; responses may stream using SSE | Remote/shared services |
 
-Servers declare these as **capabilities**. Clients can also offer capabilities to servers: **sampling** (server asks the host's LLM), **roots**, and **elicitation** (server asks the user for input).
+For stdio, do not write logs or arbitrary text to stdout; reserve stdout for protocol messages and use stderr for logs. For HTTP servers, implement authentication, validate the `Origin` header, and use safe binding/network defaults. The older HTTP+SSE transport was superseded by Streamable HTTP in the 2025-03-26 protocol revision, although implementations may retain compatibility.
 
-## 4.4 Connection lifecycle
-
-1. **Initialize**
-   - Client → `initialize` **request**: protocol version, capabilities, client info
-   - Server → **response**: its version, capabilities, server info (versions are negotiated)
-   - Client → `initialized` **notification**: ready to exchange messages
-2. **Discover** (during the operation phase): client calls `tools/list`, `resources/list`, `prompts/list`
-3. **Operate**: the LLM decides which tool to call; the client sends `tools/call`; **the server executes it** and returns the result
-4. **Shutdown**: client closes the transport and ends the session (over stdio: close stdin, then the process exits)
-
-The spec formally defines three phases (initialization, operation, shutdown); discovery happens inside operation. The 4-step view is a handy mental model.
-
-## 4.5 JSON-RPC essentials
-
-- Three message types: **request** (has `id`), **response** (same `id`), **notification** (no `id`, no response)
-- The `id` **matches a response to its request** (like the tool call ids in Part 2)
-- Communication is **bidirectional**: servers can send requests to clients too
-
-**Methods**
-- `tools/list`: called after connecting; returns every tool the server offers, so agents **discover tools without hardcoding them**. Servers can notify the client when the list changes.
-- `tools/call`: sent each time the LLM decides it needs a tool; contains tool name + arguments. The LLM chooses based on the user's request and the **tool descriptions** (same rule as docstrings: vague description means wrong tool choice).
-
-**Two kinds of failure**
-- **Tool execution error:** the tool ran but failed. The response is a normal `result` with `isError: true`, so the model can read the error and recover.
-- **Protocol error:** unknown tool, bad params, unknown method. The response is a JSON-RPC `error` object (e.g. code `-32602`).
-
-## 4.6 Transports
-
-| | **stdio** | **Streamable HTTP** |
-|---|---|---|
-| How | Host spawns the server as a **child process** on the same machine; messages flow over **stdin/stdout** (newline-delimited JSON-RPC) | Server runs as an **HTTP service** at one MCP endpoint; responses can stream via **SSE** |
-| Network | None, so low overhead | Remote or cloud deployment |
-| Clients | One client per spawned process | **Many clients** can connect |
-| Best for | Local tools (files, git) | Shared, remote, or cloud-hosted servers |
-| Watch out | **Never write logs to stdout**, use stderr | Auth (OAuth-based), validate `Origin`, bind to localhost for local servers, session handling |
-
-Streamable HTTP replaced the older HTTP+SSE transport; SSE is now an optional streaming mechanism inside it.
-
-## 4.7 Code: connecting with LangChain
-
+## LangChain MCP adapter example
 ```python
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 client = MultiServerMCPClient({
-    "math": {                         # label for this server
-        "transport": "stdio",         # how to talk to it
-        "command": "python",          # program to run
+    "math": {
+        "transport": "stdio",
+        "command": "python",
         "args": ["/path/to/math_server.py"],
     },
     "weather": {
@@ -396,993 +199,345 @@ client = MultiServerMCPClient({
         "url": "http://localhost:8000/mcp",
     },
 })
-tools = await client.get_tools()      # pass these to create_agent(...)
+
+tools = await client.get_tools()
+# Pass these tools to create_agent(...)
 ```
 
-- `MultiServerMCPClient` creates one connection per configured server. By default the adapter opens a fresh session per tool call; use an explicit session if a server must keep state (check the adapter docs for your version).
-- **Responsibility shifts:** tool implementation, backend credentials, and schemas live in the **server**. Your app becomes the **orchestrator**.
+This is illustrative. Check your installed adapter version for accepted transport names, session behavior, and client configuration.
 
-## 4.8 `uvx` and `StdioServerParameters`
+### `uvx` and supply-chain security
+`uvx` (alias for `uv tool run`) can run a Python package in an isolated environment. It can download and execute package code, so it is not risk-free. Verify the package source, permissions, and documentation; pin versions for reproducibility. Example package names and environment variables must be verified against the server's README.
 
-- `uvx` (alias for `uv tool run`) runs a Python tool from **PyPI** in an **isolated environment**, with no `pip install` into your own environment. It downloads the package, caches it, and runs its entry point.
-- With stdio, the client launches that entry point as a child process and exchanges JSON-RPC over its **stdin/stdout**.
+### MCP security
+Treat third-party servers and tool descriptions as untrusted. Validate inputs and outputs, apply authentication/authorization, rate limits, timeouts, and least-privilege credentials. Require human confirmation for sensitive actions where appropriate. Avoid logging secrets or unnecessary personal data. MCP does not automatically grant safe access to a database or cloud account.
 
-```python
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+### Simplified JSON-RPC examples
 
-params = StdioServerParameters(
-    command="uvx",
-    args=["oracle.oci-usage-mcp-server"],        # verify package name in Oracle's MCP repo
-    env={"OCI_CONFIG_PROFILE": "DEFAULT"},       # env var names depend on the server's README
-)
-
-async with stdio_client(params) as (read, write):
-    async with ClientSession(read, write) as session:
-        await session.initialize()               # handshake
-        tools = await session.list_tools()       # discover
-        result = await session.call_tool("tool_name", {"arg": "value"})  # operate
-# exiting the context closes the transport (shutdown)
-```
-
-**Supply-chain caution:** `uvx` runs third-party code with your permissions. **Pin versions** (e.g. `pkg@1.2.3`) and vet sources. The package name and env var above are unverified placeholders; check the server's README.
-
-## 4.9 When MCP shines
-
-Use it when tools are **external or reusable across apps**:
-
-- **Cloud (AWS, Azure, OCI):** manage infrastructure through a server instead of writing SDK integration code in your app (the server wraps the SDK)
-- **Databases (Oracle DB, PostgreSQL):** query without embedding drivers and credentials in your agent app
-- **Dev tools (GitHub, Jira):** create issues, review PRs from any MCP-enabled agent
-- **Communication (Slack, email):** send messages without per-app integrations
-- **File system:** read/write files on a machine, restricted to **allowed directories**
-
-**When not to bother:** a single app with a few simple in-process tools is usually simpler and faster as plain function tools, with no extra process or protocol hop.
-
-## 4.10 Security (ties into section 1.5)
-
-- **Tool poisoning:** a malicious server can hide instructions in tool descriptions. **Treat third-party servers as untrusted.**
-- **Indirect prompt injection** via tool results or resources
-- **Over-permissioned servers:** apply least privilege and scope credentials narrowly
-- **Human approval** for sensitive or irreversible tool calls (the host should show tool calls to the user)
-- **Authorization:** remote servers should use OAuth-based auth; stdio servers typically take credentials from environment variables
-- **Observability:** log every `tools/call` with arguments and results
-
-## 4.11 Sample MCP session (JSON-RPC)
-
-A full session between a client and a small `math-server`: handshake, discovery, a successful call, a tool execution error, and a protocol error.
-
-> The `step`, `direction`, and `type` fields are **added for readability only**. On the wire, each message is just the object under `message`. The protocol version string is an example; use whichever version your SDK negotiates.
-
-| Step | Direction | What happens |
-|---|---|---|
-| 1 | client → server | `initialize` request: protocol version, client capabilities |
-| 2 | server → client | Response with server capabilities (`tools`, `resources`, `prompts`) |
-| 3 | client → server | `notifications/initialized` (notification, no `id`, no reply) |
-| 4-5 | client ↔ server | `tools/list` → list of tools with `name`, `description`, `inputSchema` |
-| 6-7 | client ↔ server | `tools/call` `add` → result `7`, `isError: false` |
-| 8-9 | client ↔ server | `tools/call` `divide` by 0 → **tool execution error**: `isError: true` |
-| 10-11 | client ↔ server | `tools/call` unknown tool → **protocol error**: JSON-RPC `error` |
-
-**Connecting it to the agent loop:** between steps 5 and 6, the host converts each tool's `inputSchema` into the LLM's tool schema and sends it with the conversation (Part 3 format). When the LLM returns a tool call, the client wraps it in a `tools/call` request (step 6), and the server's result (step 7) becomes the `tool` message sent back to the LLM.
-
+List tools:
 ```json
-[
-  {
-    "step": 1,
-    "direction": "client -> server",
-    "type": "request",
-    "message": {
-      "jsonrpc": "2.0",
-      "id": 1,
-      "method": "initialize",
-      "params": {
-        "protocolVersion": "2025-06-18",
-        "capabilities": {
-          "roots": { "listChanged": true },
-          "sampling": {}
-        },
-        "clientInfo": { "name": "my-agent-host", "version": "1.0.0" }
-      }
-    }
-  },
-  {
-    "step": 2,
-    "direction": "server -> client",
-    "type": "response",
-    "message": {
-      "jsonrpc": "2.0",
-      "id": 1,
-      "result": {
-        "protocolVersion": "2025-06-18",
-        "capabilities": {
-          "tools": { "listChanged": true },
-          "resources": {},
-          "prompts": {}
-        },
-        "serverInfo": { "name": "math-server", "version": "0.1.0" }
-      }
-    }
-  },
-  {
-    "step": 3,
-    "direction": "client -> server",
-    "type": "notification",
-    "message": {
-      "jsonrpc": "2.0",
-      "method": "notifications/initialized"
-    }
-  },
-  {
-    "step": 4,
-    "direction": "client -> server",
-    "type": "request",
-    "message": {
-      "jsonrpc": "2.0",
-      "id": 2,
-      "method": "tools/list"
-    }
-  },
-  {
-    "step": 5,
-    "direction": "server -> client",
-    "type": "response",
-    "message": {
-      "jsonrpc": "2.0",
-      "id": 2,
-      "result": {
-        "tools": [
-          {
-            "name": "add",
-            "description": "Add two numbers and return the sum. Use for any addition request.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "a": { "type": "number", "description": "First number" },
-                "b": { "type": "number", "description": "Second number" }
-              },
-              "required": ["a", "b"]
-            }
-          },
-          {
-            "name": "divide",
-            "description": "Divide a by b and return the quotient.",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "a": { "type": "number", "description": "Numerator" },
-                "b": { "type": "number", "description": "Denominator, must not be zero" }
-              },
-              "required": ["a", "b"]
-            }
-          }
-        ]
-      }
-    }
-  },
-  {
-    "step": 6,
-    "direction": "client -> server",
-    "type": "request",
-    "message": {
-      "jsonrpc": "2.0",
-      "id": 3,
-      "method": "tools/call",
-      "params": {
-        "name": "add",
-        "arguments": { "a": 3, "b": 4 }
-      }
-    }
-  },
-  {
-    "step": 7,
-    "direction": "server -> client",
-    "type": "response",
-    "message": {
-      "jsonrpc": "2.0",
-      "id": 3,
-      "result": {
-        "content": [{ "type": "text", "text": "7" }],
-        "isError": false
-      }
-    }
-  },
-  {
-    "step": 8,
-    "direction": "client -> server",
-    "type": "request",
-    "message": {
-      "jsonrpc": "2.0",
-      "id": 4,
-      "method": "tools/call",
-      "params": {
-        "name": "divide",
-        "arguments": { "a": 10, "b": 0 }
-      }
-    }
-  },
-  {
-    "step": 9,
-    "direction": "server -> client",
-    "type": "response (tool execution error)",
-    "message": {
-      "jsonrpc": "2.0",
-      "id": 4,
-      "result": {
-        "content": [{ "type": "text", "text": "Error: division by zero" }],
-        "isError": true
-      }
-    }
-  },
-  {
-    "step": 10,
-    "direction": "client -> server",
-    "type": "request (unknown tool)",
-    "message": {
-      "jsonrpc": "2.0",
-      "id": 5,
-      "method": "tools/call",
-      "params": {
-        "name": "multiply",
-        "arguments": { "a": 2, "b": 5 }
-      }
-    }
-  },
-  {
-    "step": 11,
-    "direction": "server -> client",
-    "type": "response (protocol error)",
-    "message": {
-      "jsonrpc": "2.0",
-      "id": 5,
-      "error": {
-        "code": -32602,
-        "message": "Unknown tool: multiply"
-      }
-    }
-  }
-]
+{"jsonrpc":"2.0","id":2,"method":"tools/list"}
 ```
 
-A standalone copy is in `mcp_session_sample.json`.
+Call a tool:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {"name": "add", "arguments": {"a": 3, "b": 4}}
+}
+```
+
+Successful result:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {"content": [{"type": "text", "text": "7"}], "isError": false}
+}
+```
+
+Exact schemas and transport headers depend on protocol version; optional fields are omitted here for clarity.
 
 ---
 
-# Part 5: OpenAI agent stack (Responses API + Agents SDK)
+# 5. OpenAI Responses API and Agents SDK
 
-> Model names and API details change quickly. The facts here were checked in late October 2026. Verify the model lineup and SDK parameters against OpenAI's docs for your version.
-
-## 5.1 Stack at a glance
-
-| Layer | What it is | You write the loop? |
+## Responses API vs Agents SDK
+| Component | Responsibility | Who manages the multi-step loop? |
 |---|---|---|
-| **Models** | GPT-5.x reasoning family (GPT-5.6 Sol / Terra / Luna as of July 2026; GPT-5.5 is the previous generation); GPT-4.1 is older and non-reasoning | n/a |
-| **Responses API** | Core API: model call + built-in tools + function calling + optional server-side state | **Yes** |
-| **Agents SDK** | Framework: agent loop, handoffs, guardrails, sessions, tracing | **No** |
+| Models | Generate output and tool-call requests | Not applicable |
+| Responses API | Model requests, hosted tools, function calling, streaming, supported state features | Application manages multi-step loops when required |
+| Agents SDK | Higher-level agent orchestration, tool execution, handoffs, guardrails, sessions, tracing | SDK Runner |
 
-- "Reasoning vs non-reasoning" is a spectrum: GPT-5-series models take a `reasoning.effort` setting (from none up to high or higher). Raise it only when evals show a measurable gain, since it costs latency and tokens (reasoning tokens are billed as output).
-- Tiered models map onto the **two-tier pattern** from Part 1: a cheap, fast tier for routing and guardrail checks, the flagship tier for hard reasoning. Check current pricing first.
+A Responses API request can include tools and return a tool call, but for **application-defined function tools**, your application normally executes the function and submits its result. Certain hosted tools execute on the provider side.
 
-## 5.2 Responses API
+## Responses API concepts
+- Endpoint: `/v1/responses`.
+- Requests contain input and may include instructions, tools, output constraints, and supported conversation-state fields.
+- Responses contain structured output items, such as messages and function-call items.
+- Hosted tools (for example, web search, file search, or code interpreter) run within the provider's hosted service when supported and configured.
+- Application-defined function calls are requests, not proof that the function has run.
 
-- Endpoint `/v1/responses`. You send `input` and get structured `output` items (messages, function calls, reasoning items).
-- OpenAI recommends it for reasoning, tool-calling, and multi-turn use cases. Chat Completions remains supported, but new features land on Responses first.
-- **Assistants API:** its shutdown date (26 Aug 2026) has passed, so nothing new should use it. Migration map: Assistants → Prompts, Threads → Conversations, Runs → Responses, Run-Steps → Items.
-- **Single call, not "text only":** one request is one model call, but it supports built-in tools, function calling, structured output, streaming, and multi-turn state. The difference from the Agents SDK is **who owns the loop**.
+### Conversation state
+- A stateless request requires the caller to provide needed context.
+- `previous_response_id` can link a new response to a prior response when supported and enabled.
+- The Conversations API provides a conversation object.
+- State linking simplifies application-side history management; do not assume it makes earlier context free of token billing.
+- Supply tools/settings as required by the API on each request; do not assume they are automatically inherited.
 
-**Conversation chaining**
-- Chat Completions is stateless: you resend the full history every call.
-- Responses: pass `previous_response_id` and the server links the earlier context (`store` must be enabled). A durable Conversations API also exists. For stateless or zero-data-retention flows, pass back the returned output items yourself.
-- **Cost reality:** chaining saves code and bandwidth, not input tokens. Earlier context in the chain is still processed and billed as input (confirm in OpenAI's conversation-state docs). Real cost levers: prompt caching (static prompt first, dynamic last) and compaction.
-- Tools are not inherited, so resend them on each call.
+**Migration note:** OpenAI's official migration guide says the Assistants API was sunset on 26 August 2026. New implementations should use the current Responses API guidance.
 
-**Built-in (hosted) tools**
-- `{"type": "web_search"}`, `{"type": "file_search"}`, `{"type": "code_interpreter"}`, plus others such as remote MCP and computer use
-- The model decides when to use them (you can force it with `tool_choice`). They run **on OpenAI's side**, so you don't execute them.
-- Available on Responses but not Chat Completions, and metered separately from tokens.
+## Agents SDK
+Core concepts:
+- **Agent:** instructions, model, tools, optional output type, handoffs, and guardrails.
+- **Runner:** executes the agent loop.
+- **Function tools:** application-defined functions.
+- **Agents as tools:** a specialist agent called by another agent.
+- **Handoffs:** transfer control to another agent.
+- **Sessions:** preserve conversation state across runs using a supported session implementation.
+- **Tracing:** records model calls, tool activity, handoffs, and supported events.
 
-**Function calling** works as in Part 1: the model returns a `function_call` item with `call_id`, `name`, and `arguments` (a JSON **string**). Your code runs the tool and sends back a `function_call_output` with the same `call_id`. See sample 5.9.
+The SDK API, supported providers, and parameter names can change. Use docs for the exact Python or JavaScript package version. Avoid blanket provider-compatibility claims unless current SDK documentation supports them.
 
-## 5.3 Agents SDK
-
-**Core concepts**
-- **Agent**: LLM + instructions + tools, plus handoffs, guardrails, `output_type`
-- **Runner**: executes the agent loop
-- **Tools**: function tools, agents as tools, hosted tools
-- **Handoffs**: transfer control between agents
-- **Guardrails**: validate input, output, and tool calls
-- **Sessions**: memory across runs (e.g. `SQLiteSession`)
-- **Tracing**: records what the agent did
-
-It is open source, available in Python and JS/TS, and **provider-agnostic** (Responses, Chat Completions, and 100+ other LLMs). It also supports MCP servers, which connects to Part 4.
-
-**The loop (`Runner.run`)**: the runner calls the LLM with the agent's model, settings, and message history. Each turn has one of three outcomes:
-1. **Final output** → loop ends
-2. **Handoff** → current agent switches, loop continues
-3. **Tool calls** → SDK runs them, appends results, loop continues
-
-Whether to call a tool is the model's choice **every turn**; an agent with no tools simply answers directly. Use `max_turns` (default 10, check your version) to prevent runaway loops. It raises `MaxTurnsExceeded` when hit, which addresses the "runaway execution" threat from section 1.5.
-
+Example (Python):
 ```python
 from agents import Agent, Runner, function_tool
 
 @function_tool
-def get_weather(city: str) -> str:
-    """Get the current weather for a city."""   # docstring + type hints become the schema
-    return f"Sunny in {city}"
+def lookup_order(order_id: str) -> str:
+    # Replace with an authenticated, permission-checked service call.
+    return f"Demo result for order {order_id}"
 
-agent = Agent(name="Assistant", instructions="Be concise.", tools=[get_weather])
-result = Runner.run_sync(agent, "Weather in Paris?")   # async: await Runner.run(...)
+agent = Agent(
+    name="Order assistant",
+    instructions="Answer order questions. Use the tool when a lookup is required.",
+    tools=[lookup_order],
+)
+
+result = Runner.run_sync(agent, "Look up order A123")
 print(result.final_output)
 ```
 
-**Tool types**
-| Type | Meaning |
+This is a teaching example. Configure a supported model/provider, credentials, and SDK version before running it.
+
+## Handoff vs manager pattern
+| Pattern | What happens | Good fit |
+|---|---|---|
+| Handoff | Triage agent transfers control to a specialist that continues the conversation | Routing to a specialist who owns the next phase |
+| Manager / agents as tools | Manager calls specialists as tools and keeps responsibility for the final answer | Combining specialist outputs into one response |
+
+Each additional model/agent call can increase latency and cost. Start with one agent and well-defined tools unless separation provides a clear benefit.
+
+## Guardrails and tripwires
+Guardrails can validate input, output, or tool calls. A tripwire signals a guardrail condition and may stop the run by raising a documented exception.
+
+- Guardrails do not replace authorization or deterministic business rules.
+- If an input guardrail runs in parallel with the main agent, the agent may already have started and could have consumed tokens or attempted tool calls before the guardrail finishes.
+- For side-effecting workflows, use a blocking/pre-execution check where supported by the installed SDK.
+- Catch documented exceptions and return a safe response.
+- Validate exact decorator parameters and behavior against the SDK version.
+
+Tracing can record model calls, tool calls, handoffs, and guardrail activity. Traces may contain prompts, tool arguments, or returned data, so configure retention and sensitive-data controls.
+
+## When to use each approach
+- **Responses API directly:** explicit control over requests and application workflow logic.
+- **Agents SDK:** higher-level loop, tool orchestration, handoffs, guardrails, sessions, and tracing.
+- **LangChain:** agent orchestration and integrations across supported model providers.
+- **MCP:** standard discovery/invocation of tools exposed by external or reusable servers.
+
+These options can be combined: an agent framework can connect to MCP tools and use a provider's model API.
+
+---
+
+# 6. OCI Enterprise AI Agents
+
+This section preserves the OCI concepts from the source notes. Check current Oracle documentation for exact product names, availability, and configuration.
+
+## Generic enterprise agent stack
+| Layer | Responsibility |
 |---|---|
-| **Function tools** | Your Python functions; the LLM chooses based on the description (vague docstring means wrong choice) |
-| **Agents as tools** | `agent.as_tool(...)`: one agent called by another |
-| **Hosted tools** | Run by OpenAI (web search, file search, code interpreter), available with OpenAI Responses models |
+| User experience / agent definition | Persona, instructions, tools, knowledge sources, business outcome |
+| Request handling | Authentication, authorization, validation, rate limiting, routing |
+| Runtime | Execution environment for the agent application |
+| Orchestration and state | Multi-step workflows, retries, conversation state |
+| Tool sandbox | Isolated code execution and resource limits where supported |
+| Integration | Connectors, APIs, databases, credentials |
+| Scaling and reliability | Replica scaling, load distribution, timeout/retry behavior |
+| Observability | Logs, metrics, traces where instrumented, audits |
 
-**Responses API vs Agents SDK**
-| | Responses API | Agents SDK |
-|---|---|---|
-| Loop | You write it | SDK runs it |
-| Multi-agent, handoffs | Build yourself | Built in |
-| Guardrails, tracing | Build yourself | Built in |
-| Best for | One-shot tasks, simple tool use, full control | Multi-step loops, multiple agents, safety and observability |
+This is a conceptual architecture, not an Oracle product catalogue. A deployment may place these responsibilities in different services.
 
-## 5.4 Multi-agent patterns
+## Model capabilities and access modes
+- **Chat/generative models:** generate conversational or structured output; tool use depends on model/API support.
+- **Embedding models:** convert compatible input into vectors for semantic retrieval. Dimensions depend on the chosen model.
+- **Rerank models:** reorder candidate documents by query relevance. Scores are model-specific and should not automatically be interpreted as calibrated probabilities.
 
-| | **Handoff** (peer-to-peer) | **Manager** (centralized) |
-|---|---|---|
-| Control | Receiving agent **takes over** the conversation | Manager **keeps control**, calls specialists as tools |
-| Mechanism | `handoffs=[...]` (a tool call like `transfer_to_<agent>`) | `agent.as_tool(...)` |
-| Best for | Triage and routing to a specialist who owns the rest of the chat | Combining several specialists' outputs, consistent final answer, final guardrails |
+**On-demand:** shared managed model-serving infrastructure, generally usage-based. Suitable for experimentation and supported workloads that fit its limits.
 
-```python
-history_tutor = Agent(name="History Tutor", handoff_description="History questions",
-                      instructions="Answer history questions.")
-math_tutor = Agent(name="Math Tutor", handoff_description="Math questions",
-                   instructions="Solve math problems step by step.")
+**Dedicated AI cluster:** dedicated GPU capacity with cluster-based commitment/pricing. Used for workloads needing dedicated capacity and supported fine-tuning or custom/imported model workflows.
 
-triage_agent = Agent(
-    name="Triage Agent",
-    instructions="Route the user to the right specialist.",
-    handoffs=[history_tutor, math_tutor],
-    model="...",   # a cheap, fast model is usually enough for routing
-)
+Do not memorise a fixed endpoint-per-cluster number without checking current Oracle limits. Model availability, modes, regions, and quotas vary.
 
-manager = Agent(
-    name="Manager",
-    instructions="Use the tools to answer, then write one combined reply.",
-    tools=[history_tutor.as_tool(tool_name="ask_history", tool_description="History expert")],
-)
+## OCI Responses API and hosted applications
+
+### Responses API
+An API-first route for supported model interaction and agentic tools. Supported tools may include file search, code interpreter, function calling, and MCP calling depending on model/API configuration.
+
+For an application-defined function, the model requests the call; application/runtime code executes it and returns the result.
+
+### Hosted agentic application
+Typical lifecycle:
+1. Develop the agent application.
+2. Package it into a container image.
+3. Push the image to OCIR.
+4. Configure the OCI Generative AI application and runtime.
+5. Create/activate a deployment.
+6. Invoke the provisioned endpoint.
+
+OCI manages supported hosting infrastructure, but developers remain responsible for code, dependencies, permissions, safe tool logic, testing, and operational readiness.
+
+### Memory terminology
+- **Conversation history:** turns associated with a conversation.
+- **Context compaction:** reduces the size of earlier history where supported/configured; important details may be lost.
+- **Long-term memory:** selected information retained for later retrieval, subject to configuration and retention.
+- **RAG:** retrieval from knowledge sources, distinct from conversation memory.
+
+## Governance and reliability
+Use IAM and least-privilege policies. Private endpoints/network rules do not replace authentication or authorization. Configure guardrails explicitly where supported; they reduce risk but do not guarantee safety. Validate tool arguments, restrict credentials, apply timeouts/retries, and require approval for high-impact operations. Enable logs, metrics, audit records, and application tracing as needed. Autoscaling does not automatically make stateful workflows or external side effects safe.
+
+---
+
+# 7. Oracle AI Database Agentic AI
+
+## Oracle AI Vector Search
+Oracle AI Vector Search is integrated into Oracle Database and allows vectors to be stored and searched alongside relational data.
+
+Typical workflow:
+1. Extract text from source documents.
+2. Chunk the text and preserve source/permission metadata.
+3. Generate embeddings with a compatible model.
+4. Store embeddings in a `VECTOR` column.
+5. Create an appropriate vector index when useful.
+6. Embed the query and retrieve similar chunks.
+7. Use retrieved passages to ground an LLM response.
+
+### Indexes and hybrid search
+- **HNSW:** graph-based approximate nearest-neighbor indexing.
+- **IVF:** partitions vector space and searches selected partitions.
+- **Hybrid search:** combines semantic retrieval with text/keyword retrieval.
+
+Index type, syntax, supported metrics, and hybrid-search features depend on database release. A vector index is not required for every small dataset.
+
+### Distance functions
+Oracle's documented functions include `COSINE_DISTANCE`, `L1_DISTANCE`, `L2_DISTANCE`, `INNER_PRODUCT`, `HAMMING_DISTANCE`, and `JACCARD_DISTANCE`, subject to supported vector types/metrics.
+
+`VECTOR_DISTANCE(vector1, vector2, metric)` compares compatible vectors. Oracle's `DOT` metric uses the **negative dot product**; do not treat it as the same sign convention as `INNER_PRODUCT`. Lower distance generally means closer vectors for distance metrics.
+
+Illustrative SQL:
+```sql
+SELECT document_id,
+       chunk_text,
+       VECTOR_DISTANCE(embedding, :query_embedding, COSINE) AS distance
+FROM document_chunks
+WHERE department = :allowed_department
+ORDER BY distance
+FETCH FIRST 5 ROWS ONLY;
 ```
 
-- A handoff is a specialized tool call; the specialist sees the conversation history by default.
-- `handoff_description` on the specialists helps the triage agent choose.
-- **Architect note:** every handoff or sub-agent call adds LLM calls, tokens, and latency. Start with **one agent and good tools**, and split only when instructions or tools get too large or domains need isolation.
+A user-supplied filter is not sufficient authorization by itself. Enforce access through trusted application logic and database security.
 
-## 5.5 Guardrails
+### Text extraction and embeddings
+The source notes refer to `DBMS_VECTOR_CHAIN`:
+- `UTL_TO_TEXT` for text extraction in supported workflows.
+- `UTL_TO_CHUNKS` to split text into chunks.
+- `UTL_TO_EMBEDDINGS` to generate embeddings with a configured model.
 
-- **Input guardrails**: run on the initial user input, **first agent only**
-- **Output guardrails**: run on the final output, **last agent only**
-- **Tool guardrails**: run before and after each custom function-tool call, which covers the gaps in multi-agent chains
-- A guardrail is a **function**, not necessarily an agent. It often uses a small helper agent, but it can be plain code. It returns `GuardrailFunctionOutput(output_info, tripwire_triggered)`.
-- **Tripwire:** when `tripwire_triggered` is true, the runner immediately raises `InputGuardrailTripwireTriggered` or `OutputGuardrailTripwireTriggered` and halts execution. Catch it with `try/except` and return a safe response.
-- **Execution mode matters:** by default an input guardrail runs **in parallel** with the agent. That saves latency, but the agent may already have started (spent tokens, even called tools). For anything with side effects, use **blocking** mode (`run_in_parallel=False`) so the guardrail finishes first. Output guardrails always run after the agent completes, so they have no parallel option.
-- Guardrails complement, not replace, the code-enforced controls from section 1.5.
+Check exact package/API syntax, supported file types, credentials, and model setup for your database release. ONNX models must meet Oracle's supported format and compatibility requirements. An external embedding API also requires network, credential, data-egress, and privacy controls.
 
-```python
-from pydantic import BaseModel
-from agents import (Agent, Runner, GuardrailFunctionOutput, RunContextWrapper,
-                    TResponseInputItem, input_guardrail,
-                    InputGuardrailTripwireTriggered)
+## Oracle AI Database Private Agent Factory
+Agent Factory is a deployable no-code/low-code platform for building, testing, and publishing enterprise agents and workflows. It is not the same as Vector Search and should not be described as an agent that automatically lives inside the database.
 
-class HomeworkCheck(BaseModel):
-    is_homework: bool
-    reasoning: str
+### Knowledge Agent
+Designed for enterprise search and question answering over approved unstructured sources. Typical flow:
+1. Connect and ingest approved sources.
+2. Extract/chunk content and index it.
+3. Retrieve relevant passages.
+4. Generate an answer grounded in those passages.
+5. Return source references/citations where supported.
 
-checker = Agent(name="Homework checker", output_type=HomeworkCheck,
-                instructions="Is the user asking a homework question?",
-                model="...")   # small, cheap model
+Sources and connectors vary by release/configuration. Connecting a source does not automatically prove that source-system permissions are enforced for each end user.
 
-@input_guardrail(run_in_parallel=False)   # blocking; verify param name in your SDK version
-async def homework_only(ctx: RunContextWrapper, agent: Agent,
-                        input: str | list[TResponseInputItem]) -> GuardrailFunctionOutput:
-    result = await Runner.run(checker, input, context=ctx.context)
-    return GuardrailFunctionOutput(
-        output_info=result.final_output,
-        tripwire_triggered=not result.final_output.is_homework,
-    )
+### Data Analysis Agent
+Designed for structured database data. It can help translate natural-language questions into SQL, understand schema/table context, explain results, and support visualizations or suggested questions where available.
 
-triage_agent.input_guardrails = [homework_only]   # or pass input_guardrails=[...] when creating
+Generated SQL must be controlled. Restrict schemas and operations, use least-privilege database accounts, apply query limits, and validate results.
 
-try:
-    await Runner.run(triage_agent, "Write my holiday itinerary")
-except InputGuardrailTripwireTriggered:
-    print("Blocked: not a homework question")
-```
+### Agent Builder
+The visual builder can support simple workflows, tool-enabled agents, custom components (including Python where supported), and multi-agent orchestration. “No-code” does not remove the need for design, testing, credentials, access control, and maintenance. Pre-built agents and deployment options vary by release.
 
-## 5.6 Tracing
+## Autonomous AI Database MCP Server and Select AI Agent
+MCP standardizes how a compatible AI client discovers and calls tools. Oracle's managed Autonomous AI Database MCP Server exposes approved database tools through an MCP endpoint for supported environments.
 
-- On by default. View runs in the OpenAI dashboard (platform.openai.com → Traces).
-- Records each step as spans: LLM generations, tool calls, handoffs, guardrail checks. This is the **observability** layer from section 1.5.
-- Extensible: custom spans and external destinations such as Logfire, AgentOps, and Braintrust.
-- Traces can contain prompts and tool data. Check the sensitive-data settings and your data-retention policy, as tracing may be limited under zero-data-retention setups.
+- **MCP client:** the AI application.
+- **MCP server:** exposes tools through MCP.
+- **Select AI Agent framework:** defines/manages built-in or custom tools that can be exposed.
+- **Database security:** governs what the authenticated identity can access and execute.
 
-## 5.7 When to use what
+Typical setup:
+1. Confirm database release and service availability.
+2. Enable/configure the MCP Server according to Oracle instructions.
+3. Select or define approved tools.
+4. Configure the client endpoint and supported authentication.
+5. Discover and invoke tools.
+6. Ensure database permissions and audit controls are effective.
 
-- **Responses API alone:** one-shot tasks, simple tool use, or when you want full control of the loop
-- **Agents SDK:** multi-step loops, multiple agents, handoffs, guardrails, built-in tracing
-- **LangChain (Part 2):** an alternative orchestrator with a unified interface across providers
-- **MCP (Part 4):** how any of these frameworks connect to external tools and data
+Enabling MCP does not give every client access to all tools. Authentication depends on supported configuration. Database roles, network ACLs/private endpoints, VPD policies, and auditing have different purposes.
 
-## 5.8 How it connects to earlier parts
+---
 
-| Concept | Part 1 / 2 | OpenAI stack |
-|---|---|---|
-| Loop | Reason → act → observe | `Runner` loop |
-| Tool call id | `id` links result to request | `call_id` in `function_call` / `function_call_output` |
-| Tool schema | `@tool` docstring + type hints | `@function_tool` docstring + type hints |
-| Stateless model | Resend full history | Resend, or `previous_response_id` / sessions |
-| Guardrails | Code-enforced, layered | Input / output / tool guardrails + tripwires |
-| Observability | Log traces, tool calls, cost | Tracing dashboard |
+# 8. High-priority distinctions
 
-## 5.9 Sample flows (JSON)
-
-> Simplified for learning: IDs and token counts are illustrative, and the two Agents SDK traces are conceptual (not the real trace export format). The Responses API bodies follow the real request and response shapes.
-
-### Responses API: function call round trip
-
-| Step | What happens |
+| Question | Answer |
 |---|---|
-| 1 | Request with `instructions`, `input`, and tools (a function tool + hosted `web_search`) |
-| 2 | Response contains a `function_call` item (`call_id`, `name`, `arguments` as a JSON string). The model only **requested** the tool |
-| 3 | Your code runs the tool, then sends `function_call_output` with the same `call_id` and `previous_response_id` |
-| 4 | Final `message` item with `output_text`. Note `input_tokens` rose, since the chain's context is still billed |
-
-```json
-[
-  {
-    "step": 1,
-    "direction": "your app -> POST /v1/responses",
-    "body": {
-      "model": "your-model-name",
-      "instructions": "You are a helpful travel assistant. Use tools for live data. Never guess current conditions.",
-      "input": [
-        {
-          "role": "user",
-          "content": "What's the weather in Paris right now? Do I need an umbrella?"
-        }
-      ],
-      "tools": [
-        {
-          "type": "function",
-          "name": "get_weather",
-          "description": "Get the current weather for a city. Use when the user asks about current conditions.",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "city": {
-                "type": "string",
-                "description": "City name, e.g. 'Paris'"
-              }
-            },
-            "required": [
-              "city"
-            ]
-          }
-        },
-        {
-          "type": "web_search"
-        }
-      ],
-      "store": true
-    }
-  },
-  {
-    "step": 2,
-    "direction": "OpenAI -> your app (response)",
-    "body": {
-      "id": "resp_001",
-      "object": "response",
-      "status": "completed",
-      "output": [
-        {
-          "type": "reasoning",
-          "id": "rs_001",
-          "summary": []
-        },
-        {
-          "type": "function_call",
-          "id": "fc_001",
-          "call_id": "call_abc123",
-          "name": "get_weather",
-          "arguments": "{\"city\": \"Paris\"}"
-        }
-      ],
-      "usage": {
-        "input_tokens": 180,
-        "output_tokens": 95,
-        "output_tokens_details": {
-          "reasoning_tokens": 70
-        }
-      }
-    },
-    "note": "The model only REQUESTED the tool. Your code runs get_weather. Note 'arguments' is a JSON string here."
-  },
-  {
-    "step": 3,
-    "direction": "your app -> POST /v1/responses (send the tool result)",
-    "body": {
-      "model": "your-model-name",
-      "previous_response_id": "resp_001",
-      "input": [
-        {
-          "type": "function_call_output",
-          "call_id": "call_abc123",
-          "output": "{\"temp_c\": 12, \"condition\": \"Light rain\", \"rain_chance_pct\": 80}"
-        }
-      ],
-      "tools": [
-        {
-          "type": "function",
-          "name": "get_weather",
-          "description": "Get the current weather for a city. Use when the user asks about current conditions.",
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "city": {
-                "type": "string",
-                "description": "City name, e.g. 'Paris'"
-              }
-            },
-            "required": [
-              "city"
-            ]
-          }
-        },
-        {
-          "type": "web_search"
-        }
-      ]
-    },
-    "note": "Only the NEW item is sent. The server links earlier context via previous_response_id. Resend tools each call (they are not inherited)."
-  },
-  {
-    "step": 4,
-    "direction": "OpenAI -> your app (final response)",
-    "body": {
-      "id": "resp_002",
-      "object": "response",
-      "status": "completed",
-      "previous_response_id": "resp_001",
-      "output": [
-        {
-          "type": "message",
-          "role": "assistant",
-          "content": [
-            {
-              "type": "output_text",
-              "text": "It's 12°C in Paris with light rain and an 80% chance of more. Yes, take an umbrella."
-            }
-          ]
-        }
-      ],
-      "usage": {
-        "input_tokens": 310,
-        "output_tokens": 40,
-        "output_tokens_details": {
-          "reasoning_tokens": 0
-        }
-      }
-    },
-    "note": "Illustrative numbers. input_tokens is higher than in step 2 because the earlier context in the chain is still processed and billed as input. Check OpenAI's conversation-state docs for current billing details."
-  }
-]
-```
-
-### Agents SDK: triage handoff
-
-```json
-{
-  "scenario": "Triage agent hands off a math question to a specialist.",
-  "note": "Simplified conceptual trace for learning. It is NOT the actual wire format or the trace export format.",
-  "agents": [
-    "Triage Agent (first agent)",
-    "Math Tutor (specialist)",
-    "History Tutor (specialist)"
-  ],
-  "user_input": "Can you help me solve 2x + 3 = 11?",
-  "steps": [
-    {
-      "step": 1,
-      "actor": "Runner",
-      "action": "Run input guardrails (first agent only)",
-      "result": "passed"
-    },
-    {
-      "step": 2,
-      "actor": "Triage Agent (LLM call 1)",
-      "output": {
-        "type": "function_call",
-        "name": "transfer_to_math_tutor",
-        "arguments": "{}"
-      },
-      "meaning": "A handoff is a specialized tool call."
-    },
-    {
-      "step": 3,
-      "actor": "Runner",
-      "action": "Handoff detected: current agent becomes Math Tutor, conversation history carries over",
-      "loop": "continues"
-    },
-    {
-      "step": 4,
-      "actor": "Math Tutor (LLM call 2)",
-      "output": {
-        "type": "message",
-        "text": "Subtract 3 from both sides: 2x = 8. Divide by 2: x = 4."
-      }
-    },
-    {
-      "step": 5,
-      "actor": "Runner",
-      "action": "Final output (no tool calls, no handoff): loop ends. Output guardrails run for the LAST agent (Math Tutor).",
-      "result": "passed"
-    }
-  ],
-  "result.final_output": "Subtract 3 from both sides: 2x = 8. Divide by 2: x = 4."
-}
-```
-
-### Agents SDK: guardrail tripwire
-
-```json
-{
-  "scenario": "Blocking input guardrail rejects an off-topic request.",
-  "note": "Simplified conceptual trace for learning.",
-  "user_input": "Write my holiday itinerary",
-  "guardrail": {
-    "name": "homework_only",
-    "mode": "blocking (run_in_parallel=False)"
-  },
-  "steps": [
-    {
-      "step": 1,
-      "actor": "Runner",
-      "action": "Run input guardrail homework_only on the first agent's input (agent has NOT started)"
-    },
-    {
-      "step": 2,
-      "actor": "Guardrail helper agent (small, cheap model)",
-      "output": {
-        "is_homework": false,
-        "reasoning": "Request is about travel planning, not homework."
-      }
-    },
-    {
-      "step": 3,
-      "actor": "Guardrail function",
-      "output": {
-        "tripwire_triggered": true
-      },
-      "meaning": "tripwire_triggered = not is_homework"
-    },
-    {
-      "step": 4,
-      "actor": "Runner",
-      "action": "Raise InputGuardrailTripwireTriggered and halt. Triage Agent was never called, so no tokens spent and no tools run.",
-      "handled_by": "Your try/except returns a safe message to the user."
-    }
-  ],
-  "parallel_mode_difference": "With run_in_parallel=True (default), the Triage Agent starts at the same time as the guardrail. The tripwire still halts execution when it fires, but the agent may already have spent tokens or called tools. Use blocking mode for anything with side effects."
-}
-```
-
-A standalone copy of all three is in `openai_stack_samples.json`.
-
-
-
-# OCI Enterprise AI Agents — Corrected Study Notes
-**Reviewed against Oracle OCI documentation on 26 October 2026**
-
-> Product naming note: Oracle documents these capabilities under **OCI Generative AI**, including **Enterprise AI Agents**, the **Responses API**, agent tools, memory, and hosted applications. “OCI Enterprise AI” is useful shorthand, but use the official service/API names in technical discussions.
-
-## 1. What is an AI agent?
-
-An AI agent is an application that uses a model to interpret a goal, decide what step to take, and—when configured—call tools or retrieve information to complete a task. An agent is more than a chat model: it combines instructions, a model, context, tools, application logic, and security controls.
-
-Example: An employee asks, “What is our travel reimbursement policy?” The agent searches approved policy documents, retrieves relevant passages, and drafts an answer with source references. If the employee asks for their claim status, the agent may call an authenticated business API, subject to authorization checks.
-
-**Important:** the model may propose a tool call, but a tool or application runtime executes it. Enforce authorization and validate inputs in the application/tool layer; do not rely on model instructions as a security boundary.
-
-## 2. Generic enterprise agent stack
-
-This is a conceptual architecture, not a list of OCI product names.
-
-| Layer | Responsibility | Examples / questions |
-|---|---|---|
-| User experience and agent definition | User interface, agent persona, instructions, task scope, and intended business outcome | Web app, chat interface, system instructions, allowed tools |
-| Request entry and access | Authenticate callers, authorize requests, validate input, rate-limit, and route requests | API gateway, identity provider, application middleware |
-| Model and orchestration | Send prompts to a model, interpret results, manage tool calls and multi-step workflows | Responses API, agent framework, workflow logic |
-| State and memory | Preserve conversation history or retrieve durable information where configured | Conversation history, short-term compaction, long-term memory |
-| Tools and execution sandbox | Execute code or call functions/MCP servers, with suitable isolation and limits | Code interpreter, function calling, MCP, container sandbox |
-| Integration and data | Connect to enterprise APIs, databases, documents, and search indexes | REST APIs, vector stores, object storage, enterprise systems |
-| Runtime and scaling | Run the application, configure replicas and autoscaling, and provide an invocation endpoint | Managed hosting, container image, scaling rules |
-| Security and governance | Apply IAM, network controls, guardrails, auditing, and data-handling rules | OCI IAM policies, private endpoints, guardrails, audit logs |
-| Observability and operations | Diagnose failures and monitor latency, errors, usage, and resource consumption | Application logs, metrics, traces where instrumented, alerts |
-
-Not every deployment needs a separate product for every layer. Some functions are provided by OCI; others remain the responsibility of the application developer.
-
-## 3. OCI Generative AI: three useful capability groups
-
-A useful mental model is:
-
-1. **Models — intelligence:** generate text, create embeddings, or rerank candidate documents.
-2. **Enterprise AI Agents — action and orchestration:** connect model responses to tools, conversations, memory, and custom agent runtimes.
-3. **Security and governance — trust:** use IAM, networking controls, configurable guardrails, logging, and auditability.
-
-This is a study framework, not necessarily Oracle's formal three-layer product taxonomy.
-
-## 4. Enterprise AI models
-
-### 4.1 Chat / generative models
-- Generate conversational responses, summaries, explanations, and structured outputs.
-- Some supported models can use tools through the Responses API.
-- Model capability, supported input/output modalities, context limits, parameters, regions, and tool support vary by model.
-- A model call does not automatically remember prior requests. Provide conversation history or use supported conversation-state features.
-- Temperature controls sampling variability; lower values usually make outputs less variable, but do **not** guarantee correctness or prevent hallucinations.
-
-### 4.2 Embedding models
-- Convert text (and, only for models that support it, other modalities) into numerical vectors.
-- Vectors can represent semantic similarity and support retrieval, clustering, or recommendations.
-- Similarity can be calculated using cosine similarity or another suitable metric.
-- **Correction:** do not memorise “1024 dimensions” as a universal OCI rule. Vector dimensions depend on the selected embedding model and configuration.
-- In retrieval-augmented generation (RAG), an embedding model helps find relevant passages; the generative model then uses those passages to compose an answer.
-
-### 4.3 Rerank models
-- Re-score a list of candidate documents/passages against a query and reorder them by relevance.
-- Often used after initial retrieval to improve the ordering of the top candidates.
-- A rerank score is a model-specific relevance score. **Do not assume every score is a calibrated probability from 0 to 1**, or compare scores from different rerank models as if they were on one scale.
-- Typical retrieval flow: query → retrieve candidates (for example, vector or keyword search) → rerank candidates → pass the best passages to the generation model.
-
-## 5. Model access modes: on-demand vs dedicated
-
-| Topic | On-demand mode | Dedicated mode |
-|---|---|---|
-| Infrastructure | Shared managed model-serving infrastructure | Dedicated GPU capacity in a dedicated AI cluster |
-| Billing model | Generally usage/inference based; check the current model's pricing | Commitment to cluster usage/unit-hours applies |
-| Best fit | Experimentation, proof of concept, evaluation, and supported production use cases where the model/mode fits | Workloads needing dedicated capacity and more predictable performance; also supported fine-tuning/imported-model workflows |
-| Fine-tuning | Do not assume it is available in on-demand mode | Supported fine-tuning workflows use a fine-tuning dedicated AI cluster |
-| Custom/imported models | Availability depends on model and mode | Dedicated clusters can host supported pretrained, fine-tuned custom, and imported models |
-| Performance | Capacity and limits depend on service/model conditions | Dedicated GPU resources can provide more predictable performance |
-| Availability | Varies by model and region | Varies by model and region; cluster and endpoint configuration is required |
-
-
-
-## 6. OCI Enterprise AI Agents: two main approaches
-
-Oracle documents two principal approaches, which can also be combined.
-
-### 6.1 Approach A — Build with the OCI Responses API
-
-Use this when you want an API-first approach and OCI-managed model interaction and supported agent capabilities without hosting your own complete agent runtime.
-
-**Conceptual flow**
-
-1. The client application authenticates to OCI.
-2. It sends a request to the OCI Responses API using a supported model.
-3. The request can include instructions, input, prior response/conversation context, and supported tools.
-4. The service generates a response and may coordinate supported multi-step/tool workflows.
-5. The client reads or streams the response and handles application-specific behavior.
-
-The Responses API is OpenAI-compatible in request style, but it uses OCI endpoints and OCI authentication. Compatibility does not mean every OpenAI model, parameter, or tool is supported. Check the OCI supported-model and tool lists.
-
-Supported tool types documented for the OCI Responses API include:
-- **File Search** — search files made available through the relevant OCI resources.
-- **Code Interpreter** — execute supported code in a managed sandbox.
-- **Function Calling** — request a call to a function implemented by your application or runtime.
-- **MCP Calling** — connect to supported remote Model Context Protocol servers.
-
-Do not treat the tool list as unlimited or assume every tool works with every model/region. Confirm current support.
-
-### 6.2 Approach B — Deploy a hosted agentic application
-
-Use this when you have built an agent using a framework or custom code and want OCI Generative AI to host the containerized application in a managed runtime.
-
-**Typical lifecycle**
-1. Develop the agent and its runtime.
-2. Package the application as a container image.
-3. Push the image to Oracle Cloud Infrastructure Registry (OCIR).
-4. Create an OCI Generative AI application and configure runtime settings.
-5. Create a deployment that points to the container image and tag.
-6. Activate the deployment.
-7. Invoke the endpoint provisioned for the application.
-
-OCI application settings cover supported configuration for scaling, managed storage, networking, and authentication. The service provisions an endpoint. You still own the application code, container image, dependency management, agent logic, and safe implementation of your tools.
-
-
-
-### 6.3 Hybrid approach
-You can use the Responses API for supported model/tool/conversation capabilities and a hosted application for custom runtime logic. For example, the hosted application may expose business-specific tools while calling the Responses API for model interaction.
-
-## 7. Responses API vs Conversations API vs Chat Completions API
-
-| API | Purpose | Key distinction |
-|---|---|---|
-| **Responses API** | Main API for model responses and supported agentic workflows | Can support tools, multi-step work, structured outputs, and conversation context |
-| **Conversations API** | Create and manage a persistent conversation object for multi-turn history | Create/reuse a conversation and pass its conversation ID with Responses API requests |
-| **Chat Completions API** | Simpler chat-style request/response interface | Stateless interface; useful for existing integrations or simple chat that does not need Responses API features |
-
-**Important terminology:** the product/API name is **Responses API**, not “Response API.” A conversation ID preserves the relevant conversation state according to the API and retention settings; it is not, by itself, a complete long-term memory system.
-
-The OCI OpenAI-compatible base URL documented for these endpoints is:
-
-`https://inference.generativeai.${region}.oci.oraclecloud.com/openai/v1`
-
-- Responses endpoint: `/responses`
-- Conversations endpoint: `/conversations`
-- Chat Completions endpoint: `/chat/completions`
-
-Use the current Oracle quick-start and SDK examples for the correct authentication, region, project, request fields, and supported options.
-
-## 8. Agent memory and context management
-
-### 8.1 Short-term memory / conversation history
-- Stores or reuses conversation history across turns through the Conversations API and Responses API.
-- Lets the application include prior turns as context rather than treating each request as completely unrelated.
-- Data retention is configurable. Oracle documentation describes response and conversation retention settings, with a maximum of 720 hours (30 days) in the documented configuration; verify the current limit for your project/region.
-- Conversation history can become large and increase token use and latency.
-
-### 8.2 Short-term memory compaction
-- When enabled in the project configuration, compaction summarizes earlier conversation history into a smaller representation.
-- This can reduce context size, token use, and latency while preserving useful context.
-- Compaction is not a guarantee that every detail will be retained. Critical facts should be stored or retrieved explicitly when exact recall matters.
-
-### 8.3 Long-term memory
-- OCI Generative AI supports configurable long-term memory that extracts key information from conversations and stores it for later retrieval.
-- The documented configuration uses a unique **`subject_id` within a project** to associate durable memory with a subject.
-- Stored information is embedded for semantic retrieval.
-- Long-term memory is distinct from a conversation ID and from a vector store containing enterprise documents.
-- Apply consent, retention, access-control, deletion, and privacy rules appropriate to the data being stored.
-
-### 8.4 Three things not to confuse
-- **Conversation history:** what was said in a conversation.
-- **Long-term memory:** selected information retained for future retrieval across conversations for a subject.
-- **Knowledge retrieval / RAG:** search across source documents or indexed enterprise knowledge to answer a question.
-
-## 9. Foundational agent building blocks
-
-| Building block | Purpose | Do not confuse it with |
-|---|---|---|
-| **Files API** | Upload and manage files used in supported agent workflows | A full enterprise document permission system by itself |
-| **Vector Stores API** | Index content as embeddings and retrieve relevant passages semantically | The generative model itself |
-| **Containers API** | Provide secure, stateful sandbox environments for supported code execution and data processing | A general-purpose production application host |
-| **Container Files API** | Persist/manage files within supported container execution workflows | Enterprise-wide durable file storage |
-| **Function Calling** | Allow a model to request an application-defined function | The model directly executing arbitrary business code |
-| **MCP Calling** | Connect to supported remote MCP servers and tools | Automatic access to every enterprise system |
-| **NL2SQL** | Support natural-language-to-SQL workflows for supported enterprise data scenarios | General-purpose retrieval over all unstructured documents |
-
-A vector store is useful for semantic retrieval, but enterprise RAG also needs ingestion, chunking, metadata, access filtering, refresh strategy, source attribution, and evaluation.
-
-## 10. Security and governance
-
-### 10.1 IAM and least privilege
-- OCI IAM policies determine which identities or groups can access or manage resources.
-- Policies can be scoped to a tenancy or compartment, depending on the policy statement and supported resource type.
-- Grant only the permissions needed for the task. Separate administration, deployment, invocation, data access, and runtime permissions where practical.
-- A broad policy such as `manage generative-ai-family` can be appropriate for a setup exercise, but it is broader than the permissions a production caller usually needs. Follow the least-privilege policy guidance for the exact operation.
-
-**Example policy pattern from Oracle's quick start** (for setup only; review the scope before production use):
-
-```text
-allow group <your-group-name> to manage generative-ai-family in compartment <your-compartment>
-```
-
-Do not copy this blindly into production. Replace placeholders and narrow permissions according to the official IAM policy reference.
-
-### 10.2 Private endpoints and network security
-- A **private endpoint** provides private network access to supported OCI Generative AI models through a VCN and private IP/FQDN.
-- Network Security Groups, security lists, routing, DNS, and connectivity determine whether a client can reach it.
-- A **model endpoint** and a **private endpoint** are different: the model endpoint exposes a model hosted on a dedicated cluster; the private endpoint supplies the private network path.
-- Hosted agent applications also have their own networking configuration and may support private invocation endpoints.
-- Private networking does not replace IAM authentication or authorization.
-
-### 10.3 Guardrails
-OCI Generative AI documents configurable guardrails for:
-- **Content moderation:** detects content that violates configured policies.
-- **Prompt injection detection:** identifies potentially malicious instructions in user input or retrieved content.
-- **PII detection:** identifies supported personally identifiable information.
-
-Guardrails may be configured in different ways depending on the model access mode and endpoint. Oracle documents `Inform` and `Block` behavior for supported configurations. Do not assume guardrails are automatically enabled for every model or request: configure and test them explicitly.
-
-Guardrails reduce risk; they do not guarantee that every unsafe or sensitive output will be caught. Also implement authorization, input validation, output validation, safe tool design, and human review where needed.
-
-### 10.4 Tool security
-- Treat retrieved documents and user input as untrusted data.
-- Do not let a prompt alone authorize access to a database, API, or file.
-- Validate arguments, check the caller's permissions, use scoped credentials, apply timeouts and quotas, and log sensitive actions appropriately.
-- Require confirmation or human approval for high-impact or irreversible operations when appropriate.
-- Use sandboxed code execution for supported untrusted computation; do not assume a sandbox automatically makes external network calls or data access safe.
-
-### 10.5 Audit and observability
-Use OCI logging, monitoring, and audit capabilities that are available and configured for the chosen services. Capture application-level traces and business events where needed. Track:
-- Request volume, latency, failures, throttling, and timeouts.
-- Model/tool usage and cost drivers.
-- Tool-call success/failure and retry counts.
-- Guardrail outcomes and access denials.
-- Deployment health and scaling events.
-
-Do not log secrets, access tokens, or unnecessary sensitive conversation content. “Observability” is not one single agent feature; coverage depends on which OCI services and application instrumentation you enable.
-
-## 11. Scaling and reliability
-
-For hosted agentic applications, OCI lets you configure scaling behavior, including minimum and maximum replicas and supported autoscaling metrics. Actual resource use changes with the number of running replicas.
-
-Good production practices:
-- Set reasonable request timeouts and retry only transient failures.
-- Use bounded exponential backoff and avoid retry storms.
-- Make tool operations idempotent where possible.
-- Handle throttling and service errors explicitly.
-- Set concurrency and resource limits appropriate to the workload.
-- Test deployment updates and rollback procedures.
-- Monitor latency, errors, and replica scaling under representative load.
-
-
-
-## 12. End-to-end architecture example
-
-**Use case:** an employee policy assistant.
-
-1. Employee uses a web or Teams-like front end.
-2. The front end authenticates the employee and sends the request to the application.
-3. The application verifies identity and permissions.
-4. The agent uses OCI Responses API for supported model interaction and tool orchestration, or calls a custom agent hosted as an OCI Generative AI application.
-5. The agent retrieves approved policy passages from a configured vector store or another authorized source.
-6. If employee-specific information is needed, the agent requests a function/API call; the application validates permissions before executing it.
-7. Guardrails and application-level checks evaluate relevant input/output risks.
-8. The application returns an answer with citations or source references where supported.
-9. Logs, metrics, and audit records capture operational outcomes without unnecessarily exposing sensitive data.
-
-**Core security rule:** the user identity and application authorization—not the model's own judgment—must determine which employee records and enterprise documents the user can access.
-
-## 13. Common interview / exam distinctions
-
-| Question | Correct distinction |
-|---|---|
-| Need a model response and supported tool workflow? | Start with the Responses API |
-| Need a persistent multi-turn conversation object? | Conversations API plus Responses API |
-| Need a simpler stateless chat interface? | Chat Completions API may fit |
-| Need to host your own framework/runtime as a container? | OCI Generative AI hosted application and deployment |
-| Need semantic retrieval from documents? | Embeddings + vector store/search; often followed by reranking and generation |
-| Need to reorder retrieved passages for a query? | Rerank model |
-| Need durable information across separate conversations? | Configured long-term memory, not just a conversation ID |
-| Need to reduce a long chat's context size? | Short-term memory compaction, if enabled |
-| Need private network access to a model? | Configure a supported private endpoint and VCN connectivity |
-| Need to block or flag unsafe content / prompt injection / PII? | Configure supported guardrails and add application-level controls |
-| Does function calling mean the model executes your API? | No. The runtime/application executes the function and must enforce authorization |
-| Does a private endpoint replace IAM? | No. Network access and identity authorization are separate controls |
-| Does a vector store automatically enforce source-system permissions? | Do not assume so; design and test access-aware retrieval |
-
-
-
-## 15. Official Oracle references
-
-Use these as the source of truth because OCI features, model availability, limits, and APIs can change.
-
-- [Enterprise AI Agents in OCI Generative AI](https://docs.oracle.com/en-us/iaas/Content/generative-ai/agents.htm)
-- [OCI Responses API](https://docs.oracle.com/en-us/iaas/Content/generative-ai/responses-api.htm)
-- [OCI Conversations API](https://docs.oracle.com/en-us/iaas/Content/generative-ai/conversations-api.htm)
-- [Tools supported by OCI Responses API](https://docs.oracle.com/en-us/iaas/Content/generative-ai/tool-support.htm)
-- [Hosted Applications and Deployments](https://docs.oracle.com/en-us/iaas/Content/generative-ai/applications-deployments.htm)
-- [Building Agents and foundational building blocks](https://docs.oracle.com/en-us/iaas/Content/generative-ai/building-agents.htm)
-- [OCI Generative AI models](https://docs.oracle.com/en-us/iaas/Content/generative-ai/models.htm)
-- [On-demand and dedicated modes](https://docs.oracle.com/en-us/iaas/Content/generative-ai/modes.htm)
-- [Guardrails](https://docs.oracle.com/en-us/iaas/Content/generative-ai/guardrails.htm)
-- [Private endpoints](https://docs.oracle.com/en-us/iaas/Content/generative-ai/private-endpoint.htm)
-- [Oracle IAM policies for OCI Generative AI](https://docs.oracle.com/en-us/iaas/Content/generative-ai/iam-policies.htm)
-
-**Study recommendation:** learn the differences between the Responses API, Conversations API, hosted applications, model access modes, memory types, tool execution, IAM, private endpoints, and guardrails first. These distinctions are more useful than memorizing broad statements such as “OCI manages everything.”
-
+| Does an LLM execute a function call itself? | No. It returns a request; the runtime executes the function. |
+| What does LangChain `invoke()` do? | Runs the agent graph, potentially including multiple model calls and tool executions. |
+| Does `invoke()` automatically preserve memory between runs? | No. Persistent state needs a supported checkpointer/thread/session or supplied history. |
+| What does MCP standardize? | Discovery and invocation of tools/resources/prompts between hosts/clients and servers. |
+| Is MCP the same as function calling? | No. They complement each other. |
+| Does Responses API always execute application-defined functions? | No. The application usually executes them; hosted tools are a separate case. |
+| Does Agents SDK own the loop? | The Runner manages the agent loop and supported tool/handoff flow. |
+| Does RAG guarantee correct answers? | No. Retrieval and generation both need evaluation. |
+| Is Vector Search a separate database product? | No. It is integrated into Oracle Database. |
+| Are all embedding vectors 1024-dimensional? | No. Dimensions depend on the model. |
+| Are rerank scores always probabilities from 0 to 1? | No. Scores are model-specific. |
+| Does a private endpoint replace IAM? | No. Network reachability and identity authorization are different controls. |
+| Does enabling MCP authorize every database user to every tool? | No. Tool exposure, authentication, privileges, network controls, and data policies still apply. |
+| Does “no-code” mean no engineering responsibility? | No. Integrations, permissions, evaluation, monitoring, and maintenance still matter. |
+
+---
+
+# 9. Main corrections applied
+
+1. Qualified statements that agents are always autonomous, stateful, self-correcting, or make at least one LLM call per iteration.
+2. Clarified that tool schemas are model-facing descriptions, while the runtime executes tool code.
+3. Qualified claims that ReAct prevents hallucinations; tools can reduce unsupported answers but cannot eliminate errors.
+4. Clarified that LangChain APIs changed and that `create_agent` is the current v1 pattern in the reviewed docs.
+5. Separated JSON-RPC request IDs from model tool-call IDs.
+6. Added an MCP protocol-version warning: the source's sample uses the 2025-06-18 style and may not match later revisions.
+7. Clarified MCP transport/security requirements, including stdout discipline for stdio and authentication/Origin checks for HTTP.
+8. Removed unsupported blanket claims about OpenAI model family names and provider compatibility. Verify model names and SDK details in current official docs.
+9. Distinguished Responses API function calling from hosted tools.
+10. Qualified guardrail timing and SDK parameter details as version-dependent.
+11. Consolidated OCI material and separated OCI Generative AI hosting from Oracle AI Database Vector Search, Agent Factory, and MCP.
+12. Corrected vector-distance terminology and cautioned against fixed embedding dimensions or calibrated reranker scores.
+13. Clarified that enabling MCP does not grant blanket database access.
+14. Added security and version-check notes wherever behavior depends on configuration.
+
+---
+
+# Official documentation
+
+- [LangChain agents](https://docs.langchain.com/oss/python/langchain/agents)
+- [LangChain `create_agent` reference](https://reference.langchain.com/python/langchain/agents/factory/create_agent)
+- [MCP specification — tools](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)
+- [MCP specification — transports](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports)
+- [OpenAI Responses API](https://platform.openai.com/docs/guides/responses)
+- [OpenAI Agents SDK](https://platform.openai.com/docs/guides/agents)
+- [OpenAI Assistants API migration guide](https://platform.openai.com/docs/assistants/migration)
+- [Oracle AI Database Private Agent Factory](https://docs.oracle.com/en/database/oracle/agent-factory/26.7/paias/introduction.html)
+- [Oracle AI Vector Search — `VECTOR_DISTANCE`](https://docs.oracle.com/en/database/oracle/oracle-database/26/vecse/vector_distance.html)
+- [Autonomous AI Database MCP Server](https://docs.oracle.com/en/cloud/paas/autonomous-database/serverless/adbsb/mcp-server.html)
+- [Oracle University Labs — Agentic AI Foundations](https://github.com/oracle-university-labs/ou-generativeai-pro/tree/main/agentic-ai-foundations)
+
+## Recommended study order
+1. Agent fundamentals, tool calling, and safety.
+2. LangChain `create_agent` and what `invoke()` executes.
+3. MCP architecture, JSON-RPC, transports, and tool security.
+4. Responses API vs Agents SDK; function tools vs hosted tools.
+5. OCI agent architecture, deployment modes, and memory terminology.
+6. Oracle Vector Search, chunking, embeddings, distance functions, and indexes.
+7. Agent Factory Knowledge/Data Analysis agents and MCP/Select AI Agent.
+8. Revisit official docs before using code or memorizing version-specific behavior.
+9. https://github.com/oracle-university-labs/ou-generativeai-pro/tree/main/agentic-ai-foundations 
