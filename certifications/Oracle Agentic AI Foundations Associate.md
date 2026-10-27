@@ -1424,3 +1424,4 @@ An agent has a role and available tools. A team coordinates tasks assigned to on
 6. Oracle Vector Search, chunking, embeddings, distance functions, and indexes.
 7. Agent Factory Knowledge/Data Analysis agents and MCP/Select AI Agent.
 8. Revisit official docs before using code or memorizing version-specific behavior.
+9. https://github.com/oracle-university-labs/ou-generativeai-pro/tree/main/agentic-ai-foundations
