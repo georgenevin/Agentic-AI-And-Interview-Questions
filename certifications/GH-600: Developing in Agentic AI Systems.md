@@ -4518,3 +4518,2406 @@ Implement the approved weekly repository health report from #42.
 ```
 
 This structure makes the PR a practical handoff and audit record while preserving clear ownership of requirements, design, and implementation.
+
+
+# GH-600 Practical Implemetation
+
+---
+
+# 1. GitHub Copilot customization overview
+
+GitHub Copilot can be customized at different levels. The main mechanisms discussed here are:
+
+| Mechanism | File / location | Main purpose |
+|---|---|---|
+| Repository-wide instructions | `.github/copilot-instructions.md` | General guidance for Copilot across a repository |
+| Path-specific instructions | `.github/instructions/*.instructions.md` | Extra guidance for matching files |
+| Agent Skills | `.github/skills/<skill-name>/SKILL.md` | Reusable specialist knowledge and task procedures |
+| Custom agents | `.github/agents/*.agent.md` | Define specialist agent roles and capabilities |
+| Prompt files | `.github/prompts/*.prompt.md` | Reusable prompts that a user can invoke |
+| GitHub Actions workflows | `.github/workflows/*.yml` | Automate CI/CD and repository workflows |
+
+These mechanisms are complementary:
+
+- Instructions establish the rules and conventions Copilot should follow.
+- Skills describe reusable task-specific knowledge and procedures.
+- Custom agents define specialist roles, instructions and available tools.
+- Prompt files provide reusable task prompts.
+- GitHub Actions workflows automate repository events and CI/CD tasks.
+
+**Important:** The exact availability and behavior of skills, custom agents, subagents and tool names depend on the Copilot client, agent mode, and version. Verify current support in the official documentation for the environment being used.
+
+---
+
+# 2. Repository-wide instructions
+
+**File:** `.github/copilot-instructions.md`
+
+Use this file for guidance that should generally apply across the repository.
+
+Example for a Python and LangGraph project:
+
+```markdown
+# Project Development Guidelines
+
+## Technology Stack
+- Use Python.
+- Use LangGraph for graph-based agent workflows.
+- Use the LLM provider configured by the project.
+- Use pytest for testing.
+- Follow the dependency management approach already used by the repository.
+
+## Development Standards
+- Follow the existing project architecture.
+- Use type hints.
+- Use Pydantic for structured validation where appropriate.
+- Keep business logic separate from agent orchestration.
+- Use environment variables or approved secret stores for configuration.
+- Never hardcode API keys or credentials.
+- Follow existing logging and error-handling patterns.
+
+## Agent Development
+- Define explicit graph state schemas.
+- Keep graph nodes focused on clear responsibilities.
+- Use conditional routing only where required.
+- Handle tool failures and invalid responses.
+- Use persistence/checkpointing when required by the business case.
+
+## Business Requirements
+- Treat the approved requirement document as the source of truth.
+- Do not invent missing business rules.
+- Ask for clarification when requirements are ambiguous.
+- Maintain traceability from requirements to implementation and tests.
+
+## Quality
+- Add unit tests for new business logic.
+- Add integration tests for graph behavior.
+- Avoid unrelated changes.
+- Update documentation when behavior changes.
+```
+
+**Remember:** This is repository-wide guidance. Do not put the entire detailed specification for every feature in this file.
+
+---
+
+# 3. Path-specific instructions
+
+**Location:** `.github/instructions/`
+
+Path-specific instruction files add rules for files matching an `applyTo` pattern.
+
+Example: `.github/instructions/langgraph.instructions.md`
+
+```markdown
+---
+applyTo: "src/agents/**/*.py"
+---
+
+# LangGraph Development Instructions
+
+## Architecture
+- Use LangGraph StateGraph for graph-based workflows.
+- Define typed state using TypedDict or Pydantic, as appropriate.
+- Keep nodes small and independently testable.
+- Define explicit edges and conditional routing.
+- Avoid unnecessary graph complexity.
+
+## State Management
+- Store only necessary state.
+- Do not store secrets in graph state.
+- Use checkpointing when persistence is required.
+- Handle interrupted and resumed execution where applicable.
+
+## Tool Integration
+- Define clear tool input and output schemas.
+- Validate tool responses.
+- Handle timeouts and failures.
+- Avoid unnecessary tool calls.
+
+## Testing
+- Test individual graph nodes.
+- Test conditional routing.
+- Test failure and retry paths.
+- Test final structured outputs.
+```
+
+Other possible instruction files:
+
+```text
+.github/
+└── instructions/
+    ├── langgraph.instructions.md
+    ├── backend.instructions.md
+    ├── testing.instructions.md
+    └── security.instructions.md
+```
+
+**Exam point:** Repository-wide instructions and path-specific instructions both guide Copilot. Path-specific instructions use `applyTo` to target matching files.
+
+---
+
+# 4. Agent Skills (`SKILL.md`)
+
+Skills package reusable specialist knowledge and procedures. A skill can include supporting references, examples, templates and scripts.
+
+Typical location:
+
+```text
+.github/
+└── skills/
+    └── implement-feature/
+        ├── SKILL.md
+        ├── references/
+        │   └── feature-requirements.md
+        └── examples/
+```
+
+Example: `.github/skills/implement-feature/SKILL.md`
+
+```markdown
+---
+name: implement-feature
+description: Implement a LangGraph agent feature from an approved business requirements document. Use for requirement analysis, planning, implementation and testing.
+---
+
+# Implement Feature from Business Requirements
+
+## Step 1: Understand Requirements
+1. Read the supplied business requirement document.
+2. Identify business objectives.
+3. Extract functional requirements.
+4. Extract non-functional requirements.
+5. Identify inputs, outputs and integrations.
+6. Identify validation rules and error scenarios.
+7. Identify acceptance criteria.
+8. Record missing or ambiguous requirements.
+9. Do not assume undocumented business rules.
+
+## Step 2: Analyze the Existing Project
+1. Inspect the repository structure.
+2. Identify existing LangGraph agents.
+3. Review shared state schemas.
+4. Identify reusable tools and services.
+5. Review existing tests and coding patterns.
+6. Avoid duplicating existing functionality.
+
+## Step 3: Design the Agent
+Propose:
+- Agent responsibilities
+- Graph nodes
+- State schema
+- Conditional edges
+- Tool integrations
+- Error-handling strategy
+- Checkpointing requirements
+- Human approval points, if needed
+
+Explain the design before implementation.
+
+## Step 4: Implementation Plan
+List:
+- Files to create
+- Files to modify
+- Dependencies
+- Implementation sequence
+- Tests required
+- Risks and assumptions
+
+Request approval before coding.
+
+## Step 5: Implement
+After approval:
+1. Implement state models.
+2. Implement graph nodes.
+3. Implement tool integrations.
+4. Define graph routing.
+5. Add error handling.
+6. Configure graph compilation.
+7. Add logging.
+8. Follow repository instructions.
+
+## Step 6: Testing
+Test:
+- Expected business scenarios
+- Invalid inputs
+- Missing data
+- Tool failures
+- Conditional routing
+- State transitions
+- Structured output validation
+
+## Step 7: Final Review
+Verify:
+- All approved requirements are covered.
+- Acceptance criteria are satisfied.
+- Existing functionality is unaffected.
+- Tests pass.
+- No secrets are exposed.
+- Documentation is updated.
+
+## Deliverables
+1. Requirement summary
+2. Architecture proposal
+3. Implementation plan
+4. Code changes
+5. Test results
+6. Requirement traceability matrix
+7. Open issues and assumptions
+```
+
+**Instructions vs Skills:**
+
+| Instructions | Skills |
+|---|---|
+| Tell Copilot how to work in the repository or with matching files | Provide reusable specialist procedures and knowledge |
+| Usually apply automatically according to their scope | Loaded or invoked when relevant and supported |
+| Examples: naming conventions, architecture rules | Examples: code review procedure, feature implementation workflow |
+| Usually concise project guidance | Can include references, examples, scripts and templates |
+
+Do not confuse a skill with a custom agent. A skill is reusable task knowledge; a custom agent defines a specialist Copilot role.
+
+---
+
+# 5. Custom agents (`.agent.md`)
+
+Custom agents define specialized roles for Copilot.
+
+Typical location:
+
+```text
+.github/
+└── agents/
+    ├── planner.agent.md
+    ├── architect.agent.md
+    ├── coder.agent.md
+    ├── evaluator.agent.md
+    └── orchestrator.agent.md
+```
+
+A custom agent file generally contains frontmatter such as `name`, `description`, and optionally supported tools or other agent configuration, followed by the agent's instructions.
+
+## 5.1 Planner agent
+
+File: `.github/agents/planner.agent.md`
+
+```markdown
+---
+name: Planner
+description: Analyze business requirement documents, extract requirements, identify ambiguities and create implementation plans.
+---
+
+# Role: Business Requirements Planner
+
+## Responsibilities
+1. Read the supplied requirement document.
+2. Extract functional requirements.
+3. Extract non-functional requirements.
+4. Identify business rules and validations.
+5. Identify dependencies and external integrations.
+6. Identify missing or ambiguous requirements.
+7. Assign IDs such as FR-001 and NFR-001.
+8. Define acceptance criteria.
+
+## Deliverables
+- Business requirement summary
+- Functional requirements
+- Non-functional requirements
+- Assumptions and open questions
+- Acceptance criteria
+- Requirement traceability matrix
+
+## Restrictions
+- Never invent business requirements.
+- Do not modify source code.
+- Do not start implementation.
+```
+
+## 5.2 Architect agent
+
+File: `.github/agents/architect.agent.md`
+
+```markdown
+---
+name: Architect
+description: Design LangGraph agent architecture based on approved business requirements.
+---
+
+# Role: LangGraph Solution Architect
+
+## Responsibilities
+1. Review approved requirements.
+2. Inspect existing project architecture.
+3. Define graph state schema.
+4. Identify required nodes.
+5. Design conditional edges.
+6. Identify tools and external integrations.
+7. Define error handling and retry strategies.
+8. Define persistence and checkpointing requirements.
+
+## Deliverables
+- Architecture overview
+- Graph node definitions
+- State schema
+- Graph execution flow
+- Tool specifications
+- Error-handling strategy
+- Testing strategy
+
+## Restrictions
+- Do not modify application code.
+- Follow existing project conventions.
+- Do not introduce unnecessary dependencies.
+```
+
+## 5.3 Coder agent
+
+File: `.github/agents/coder.agent.md`
+
+```markdown
+---
+name: Coder
+description: Implement approved LangGraph agent designs using Python, Pydantic and existing project conventions.
+---
+
+# Role: LangGraph Developer
+
+## Responsibilities
+1. Read approved requirements and architecture.
+2. Follow existing project structure.
+3. Implement Pydantic state models.
+4. Implement individual graph nodes.
+5. Implement tools and integrations.
+6. Configure StateGraph and edges.
+7. Implement conditional routing.
+8. Add logging and exception handling.
+9. Write unit and integration tests.
+
+## Coding Standards
+- Use Python type hints.
+- Keep nodes focused on individual responsibilities.
+- Avoid unnecessary dependencies.
+- Never hardcode credentials.
+- Follow existing dependency management.
+
+## Restrictions
+- Do not change approved business rules.
+- Do not modify unrelated modules.
+- Report deviations from the architecture.
+```
+
+## 5.4 Evaluator agent
+
+File: `.github/agents/evaluator.agent.md`
+
+```markdown
+---
+name: Evaluator
+description: Independently evaluate LangGraph implementations against business requirements, architecture, security and test coverage.
+---
+
+# Role: Independent Quality Evaluator
+
+## Responsibilities
+1. Compare implementation against requirements.
+2. Verify acceptance criteria.
+3. Review graph state and transitions.
+4. Check conditional routing.
+5. Review tool integrations.
+6. Identify error-handling gaps.
+7. Review security practices.
+8. Examine unit and integration tests.
+9. Identify missing test scenarios.
+
+## Deliverables
+- Requirement coverage
+- Functional defects
+- Architecture violations
+- Security issues
+- Test coverage gaps
+- Performance concerns
+- Recommendations
+
+## Restrictions
+- Do not modify application code.
+- Do not approve functionality without evidence.
+- Clearly distinguish critical and minor issues.
+```
+
+## 5.5 Orchestrator agent
+
+File: `.github/agents/orchestrator.agent.md`
+
+```markdown
+---
+name: Orchestrator
+description: Coordinate development of LangGraph agents from business requirement documents using specialist planner, architect, coder and evaluator agents.
+---
+
+# Role: Development Orchestrator
+
+## Workflow
+
+### Phase 1: Requirement Analysis
+- Delegate PDF analysis to Planner.
+- Review extracted requirements.
+- Identify unresolved questions.
+- Request user clarification where necessary.
+
+### Phase 2: Architecture
+- Delegate architecture design to Architect.
+- Review the proposed graph design.
+- Ensure approved requirements are addressed.
+
+### Phase 3: Approval
+- Present requirements and architecture.
+- Request explicit user approval before implementation.
+
+### Phase 4: Implementation
+- Delegate implementation to Coder.
+- Provide approved requirements and architecture.
+- Review implementation results.
+
+### Phase 5: Evaluation
+- Delegate independent review to Evaluator.
+- Check requirement coverage and test results.
+- Send actionable defects to Coder for correction.
+
+### Phase 6: Final Validation
+- Re-run evaluation after corrections.
+- Summarize completed work.
+- Report unresolved issues.
+
+## Rules
+- Never skip requirement analysis.
+- Never implement before approval.
+- Never allow the Coder to change approved business rules.
+- Never treat an unverified test as passing.
+- Maintain requirement traceability.
+```
+
+**Important implementation note:** The examples above describe agent responsibilities. To enable actual delegation, configure the supported subagent/delegation tools and agent allowlists for the Copilot client and agent mode in use. Do not assume that merely creating several `.agent.md` files automatically makes them collaborate. Verify current frontmatter and tool syntax in the official documentation.
+
+---
+
+# 6. Multi-agent development workflow for a LangGraph feature
+
+Scenario: A new LangGraph agent must be developed using a business requirements PDF.
+
+## 6.1 Recommended project structure
+
+```text
+my-langgraph-project/
+│
+├── .github/
+│   ├── copilot-instructions.md
+│   │
+│   ├── instructions/
+│   │   └── langgraph.instructions.md
+│   │
+│   ├── agents/
+│   │   ├── orchestrator.agent.md
+│   │   ├── planner.agent.md
+│   │   ├── architect.agent.md
+│   │   ├── coder.agent.md
+│   │   └── evaluator.agent.md
+│   │
+│   └── skills/
+│       └── implement-feature/
+│           ├── SKILL.md
+│           └── references/
+│               └── feature-requirements.md
+│
+├── requirements/
+│   └── new-agent-requirements.pdf
+│
+├── src/
+│   └── agents/
+│
+└── tests/
+```
+
+## 6.2 Keep the PDF as the source of truth
+
+Do not copy an entire PDF into `copilot-instructions.md`.
+
+Instead:
+
+1. Keep the approved PDF in a requirements folder.
+2. Ask the Planner to extract requirements.
+3. Create a structured Markdown requirements file.
+4. Preserve requirement IDs, source page numbers, acceptance criteria and unresolved questions.
+5. Ask the user or business owner to resolve ambiguities.
+6. Use the approved requirements for architecture and implementation.
+
+Example: `references/feature-requirements.md`
+
+```markdown
+# Feature: Customer Support Agent
+
+## Source
+requirements/new-agent-requirements.pdf
+
+## Business Objective
+Develop a LangGraph agent to handle customer support requests.
+
+## Functional Requirements
+
+### FR-001: Accept Customer Query
+- Accept a natural-language question.
+- Validate the input.
+- Return an error for empty input.
+
+### FR-002: Retrieve Information
+- Retrieve relevant information from the approved knowledge source.
+- Return supporting references.
+
+### FR-003: Generate Response
+- Generate a response using retrieved context.
+- Do not fabricate missing information.
+
+## Non-Functional Requirements
+- Protect customer information.
+- Log application errors.
+- Follow project performance requirements.
+
+## Acceptance Criteria
+- Valid queries produce supported answers.
+- Invalid inputs are handled.
+- Retrieval failures are handled gracefully.
+
+## Open Questions
+- What is the approved knowledge source?
+- What response-time target is required?
+- Is conversation history required?
+```
+
+This is only an illustrative example; actual requirements must come from the supplied PDF.
+
+## 6.3 Workflow
+
+1. **Planner:** Read the PDF, extract functional and non-functional requirements, identify ambiguity and create a traceability matrix.
+2. **Architect:** Inspect the repository and design state, nodes, edges, tools, persistence and error handling.
+3. **Approval gate:** Present requirements and architecture to the user. Do not begin implementation until approved.
+4. **Coder:** Implement the approved design and tests.
+5. **Evaluator:** Independently review requirement coverage, code quality, security and tests.
+6. **Correction loop:** Send actionable defects to the Coder, then run evaluation again.
+7. **Final report:** Summarize changes, tests, requirement coverage and outstanding issues.
+
+## 6.4 Example prompt to start the workflow
+
+```text
+I need to implement a new LangGraph agent based on
+requirements/new-agent-requirements.pdf.
+
+Use the implement-feature skill.
+
+First, analyze the PDF and existing repository.
+Extract functional and non-functional requirements,
+identify ambiguities, and create a requirement
+traceability matrix.
+
+Next, propose the LangGraph architecture, including
+state, nodes, conditional edges, tools, error handling
+and testing strategy.
+
+Do not generate implementation code until I approve
+the design and implementation plan.
+```
+
+## 6.5 Recommended approach
+
+Start with Planner, Architect, Coder and Evaluator. Test each agent independently. Add the Orchestrator and delegation after the individual agents work reliably.
+
+GitHub Copilot custom agents are not the same as LangGraph agents:
+
+- Copilot custom agents customize the development assistant.
+- LangGraph agents are application components that you build, test and deploy.
+
+---
+
+# 7. Bash commands for GitHub Actions
+
+Bash commands are commonly used inside a workflow's `run:` section.
+
+## 7.1 Essential commands
+
+| Command | Purpose | Example |
+|---|---|---|
+| `pwd` | Print current directory | `pwd` |
+| `ls` | List files | `ls -la` |
+| `cd` | Change directory | `cd src` |
+| `mkdir` | Create directory | `mkdir -p output` |
+| `touch` | Create empty file | `touch app.txt` |
+| `cat` | Display file content | `cat app.txt` |
+| `echo` | Print text | `echo "Hello"` |
+| `cp` | Copy files | `cp a.txt b.txt` |
+| `mv` | Move or rename | `mv old.txt new.txt` |
+| `rm` | Delete files | `rm app.txt` |
+| `grep` | Search text | `grep "error" log.txt` |
+| `find` | Find files | `find . -name "*.py"` |
+| `head` | First lines | `head -n 10 log.txt` |
+| `tail` | Last lines | `tail -n 10 log.txt` |
+| `wc` | Count lines/words | `wc -l log.txt` |
+| `sort` | Sort text | `sort names.txt` |
+| `uniq` | Remove adjacent duplicates | `sort names.txt \| uniq` |
+
+## 7.2 Bash operators
+
+| Symbol | Meaning | Example |
+|---|---|---|
+| `>` | Redirect output, overwrite | `echo "Hi" > file.txt` |
+| `>>` | Append output | `echo "Hi" >> file.txt` |
+| `\|` | Pipe output | `cat file.txt \| grep error` |
+| `&&` | Run next command if previous succeeds | `mkdir build && cd build` |
+| `\|\|` | Run next command if previous fails | `npm test \|\| echo "Failed"` |
+| `;` | Run commands sequentially | `pwd; ls` |
+| `$VAR` | Read variable | `echo "$HOME"` |
+| `$()` | Command substitution | `DATE=$(date)` |
+
+## 7.3 Bash conditions and loops
+
+If/else:
+
+```bash
+if [ -f "app.txt" ]; then
+    echo "File exists"
+else
+    echo "File not found"
+fi
+```
+
+For loop:
+
+```bash
+for file in *.txt
+do
+    echo "$file"
+done
+```
+
+While loop:
+
+```bash
+count=1
+
+while [ "$count" -le 5 ]
+do
+    echo "$count"
+    count=$((count + 1))
+done
+```
+
+Check command success:
+
+```bash
+if npm test; then
+    echo "Tests passed"
+else
+    echo "Tests failed"
+    exit 1
+fi
+```
+
+## 7.4 Exit codes and shell options
+
+| Item | Meaning |
+|---|---|
+| `exit 0` | Successful exit |
+| `exit 1` | Failed exit |
+| `$?` | Exit code of previous command |
+| `set -e` | Exit on many command failures |
+| `set -x` | Print commands as they execute |
+| `set -o pipefail` | Pipeline fails if a command in the pipeline fails |
+
+Example:
+
+```bash
+set -e
+set -o pipefail
+
+python -m pytest
+```
+
+GitHub's explicit `shell: bash` configuration uses fail-fast behavior and `pipefail` by default. Be aware that `set -e` has shell-specific exceptions and should not be treated as a substitute for deliberate error handling.
+
+## 7.5 GitHub Actions environment variables
+
+Useful predefined variables include:
+
+```bash
+echo "$GITHUB_WORKSPACE"
+echo "$GITHUB_SHA"
+echo "$GITHUB_REF"
+echo "$RUNNER_OS"
+echo "$GITHUB_ACTOR"
+echo "$PATH"
+```
+
+| Variable | Purpose |
+|---|---|
+| `GITHUB_WORKSPACE` | Repository workspace |
+| `GITHUB_SHA` | Commit SHA |
+| `GITHUB_REF` | Branch or tag ref |
+| `RUNNER_OS` | Runner operating system |
+| `GITHUB_ACTOR` | User who initiated the run |
+| `GITHUB_REPOSITORY` | Repository owner/name |
+
+## 7.6 Important GitHub Actions environment files
+
+### `GITHUB_ENV` – Share environment variables between later steps
+
+```bash
+echo "APP_ENV=production" >> "$GITHUB_ENV"
+```
+
+A later step can use:
+
+```bash
+echo "$APP_ENV"
+```
+
+The step writing to `GITHUB_ENV` does not see the new value in its own process; later steps do.
+
+### `GITHUB_OUTPUT` – Set a step output
+
+```bash
+echo "version=1.0.0" >> "$GITHUB_OUTPUT"
+```
+
+Example:
+
+```yaml
+steps:
+  - name: Generate version
+    id: version
+    run: echo "version=1.0.0" >> "$GITHUB_OUTPUT"
+
+  - name: Display version
+    run: echo "${{ steps.version.outputs.version }}"
+```
+
+### `GITHUB_PATH` – Add a directory to PATH for later steps
+
+```bash
+echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+```
+
+### `GITHUB_STEP_SUMMARY` – Add a job summary
+
+```bash
+echo "## Build completed successfully" >> "$GITHUB_STEP_SUMMARY"
+```
+
+### `GITHUB_STATE` – Save state for a custom action
+
+```bash
+echo "process_id=1234" >> "$GITHUB_STATE"
+```
+
+`GITHUB_STATE` is primarily for sharing state between lifecycle stages of an action, not a general cross-step environment variable mechanism.
+
+## 7.7 Workflow logging commands
+
+```bash
+echo "::debug::Debug message"
+echo "::notice::Notice message"
+echo "::warning::Warning message"
+echo "::error::Error message"
+echo "::group::Build logs"
+echo "Compiling application..."
+echo "::endgroup::"
+echo "::add-mask::sensitive-value"
+```
+
+| Command | Purpose |
+|---|---|
+| `::debug::` | Debug message |
+| `::notice::` | Notice annotation |
+| `::warning::` | Warning annotation |
+| `::error::` | Error annotation |
+| `::group::` | Start log group |
+| `::endgroup::` | End log group |
+| `::add-mask::` | Mask a value in logs |
+
+---
+
+# 8. GitHub Actions workflow YAML
+
+Workflow files are stored in:
+
+```text
+.github/workflows/
+    ci.yml
+    cd.yml
+    test.yml
+    security.yml
+```
+
+A basic workflow:
+
+```yaml
+name: Application CI Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  APP_ENV: development
+
+jobs:
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@<verified-version>
+
+      - name: Display message
+        run: echo "Building application"
+```
+
+Use current, verified action versions when creating real workflows. The version placeholders in this guide are deliberate: action releases change over time.
+
+## 8.1 Main YAML keywords
+
+| Keyword | Purpose |
+|---|---|
+| `name` | Workflow name |
+| `run-name` | Name for an individual workflow run |
+| `on` | Events that trigger workflow |
+| `permissions` | `GITHUB_TOKEN` access permissions |
+| `env` | Environment variables |
+| `jobs` | Collection of jobs |
+| `runs-on` | Runner selection |
+| `steps` | Tasks within a job |
+| `uses` | Execute an action |
+| `run` | Execute shell commands |
+| `with` | Pass inputs to an action |
+| `needs` | Job dependencies |
+| `if` | Conditional execution |
+| `strategy` | Matrix and execution strategy |
+| `concurrency` | Control concurrent executions |
+| `defaults` | Default shell and working directory |
+| `environment` | Deployment environment |
+| `container` | Job container |
+| `services` | Supporting service containers |
+| `timeout-minutes` | Execution timeout |
+| `continue-on-error` | Allow execution to continue after failure |
+
+---
+
+# 9. Workflow triggers – `on`
+
+The `on` key determines when a workflow runs.
+
+## 9.1 `push`
+
+```yaml
+on:
+  push:
+    branches:
+      - main
+      - develop
+```
+
+Filter by branch, tag and path:
+
+```yaml
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - '!src/docs/**'
+```
+
+This runs for matching changes under `src/`, excluding `src/docs/`.
+
+## 9.2 `pull_request`
+
+```yaml
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+```
+
+Common event types:
+
+| Event type | Meaning |
+|---|---|
+| `opened` | PR created |
+| `synchronize` | New commits pushed to PR |
+| `reopened` | Closed PR reopened |
+| `closed` | PR closed |
+| `edited` | PR details edited |
+| `ready_for_review` | Draft PR marked ready |
+
+## 9.3 `workflow_dispatch`
+
+Manually trigger a workflow.
+
+```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        required: true
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+```
+
+## 9.4 `schedule`
+
+Cron-based schedule. Scheduled workflows use UTC.
+
+```yaml
+on:
+  schedule:
+    - cron: '0 2 * * *'
+```
+
+This runs daily at 02:00 UTC, subject to GitHub's scheduling behavior.
+
+Cron fields:
+
+```text
+* * * * *
+| | | | |
+| | | | └── Day of week
+| | | └──── Month
+| | └────── Day of month
+| └──────── Hour
+└────────── Minute
+```
+
+## 9.5 Other important triggers
+
+| Trigger | Purpose |
+|---|---|
+| `release` | Release events |
+| `issues` | Issue events |
+| `issue_comment` | Issue or PR comment events |
+| `workflow_run` | Another workflow completes |
+| `workflow_call` | Reusable workflow invocation |
+| `repository_dispatch` | External API-triggered event |
+| `create` | Branch or tag creation |
+| `delete` | Branch or tag deletion |
+| `merge_group` | Merge queue events |
+
+**Exam distinction:**
+- `workflow_dispatch`: Manual execution.
+- `workflow_call`: Makes a workflow reusable.
+- `workflow_run`: Runs in response to another workflow's completion.
+
+---
+
+# 10. Jobs, dependencies and outputs
+
+## 10.1 Jobs run in parallel by default
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Building"
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Testing"
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Security scanning"
+```
+
+These jobs can run in parallel because there are no dependencies.
+
+## 10.2 `needs` – Job dependency
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Building"
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Testing"
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Deploying"
+```
+
+Execution order: Build → Test → Deploy.
+
+Multiple dependencies:
+
+```yaml
+deploy:
+  needs: [build, test, security]
+  runs-on: ubuntu-latest
+  steps:
+    - run: echo "Deploy"
+```
+
+The deploy job waits for all listed dependencies to complete successfully under normal conditions.
+
+## 10.3 Step outputs
+
+```yaml
+steps:
+  - name: Generate version
+    id: version
+    run: echo "value=1.0" >> "$GITHUB_OUTPUT"
+
+  - name: Display version
+    run: echo "${{ steps.version.outputs.value }}"
+```
+
+## 10.4 Job outputs
+
+```yaml
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      app_version: ${{ steps.set_version.outputs.version }}
+
+    steps:
+      - id: set_version
+        run: echo "version=1.2.0" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Deploying ${{ needs.version.outputs.app_version }}"
+```
+
+## 10.5 Data-sharing comparison
+
+| Mechanism | Use |
+|---|---|
+| `GITHUB_ENV` | Environment variable for subsequent steps in the same job |
+| `GITHUB_OUTPUT` | Step output |
+| `jobs.<job_id>.outputs` | Expose step output at job level |
+| `needs.<job_id>.outputs` | Read output from a dependent job |
+| Artifacts | Share files between jobs or retain files |
+
+**Exam point:** Environment variables are not a general mechanism for sharing files or values across separate jobs. Use job outputs for small values and artifacts for files.
+
+---
+
+# 11. Runners, steps and action syntax
+
+## 11.1 GitHub-hosted runners
+
+```yaml
+runs-on: ubuntu-latest
+```
+
+Other common runner labels:
+
+```yaml
+runs-on: windows-latest
+```
+
+```yaml
+runs-on: macos-latest
+```
+
+| Runner | Common use |
+|---|---|
+| Ubuntu | Linux applications |
+| Windows | .NET and Windows applications |
+| macOS | Apple ecosystem development |
+
+## 11.2 Self-hosted runners
+
+```yaml
+runs-on: self-hosted
+```
+
+With labels:
+
+```yaml
+runs-on: [self-hosted, linux, x64]
+```
+
+A runner must satisfy all specified labels.
+
+| GitHub-hosted | Self-hosted |
+|---|---|
+| GitHub manages runner infrastructure | Organization/team manages runner |
+| Convenient setup | More control over machine and environment |
+| Standard hosted environments | Can access approved internal resources |
+
+## 11.3 `uses`
+
+Runs an existing action:
+
+```yaml
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@<verified-version>
+```
+
+## 11.4 `run`
+
+Executes shell commands:
+
+```yaml
+steps:
+  - name: Install dependencies
+    run: |
+      python -m pip install -r requirements.txt
+      pytest
+```
+
+## 11.5 `with`
+
+Passes inputs to an action:
+
+```yaml
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@<verified-version>
+    with:
+      fetch-depth: 0
+```
+
+## 11.6 `id`
+
+Assigns a step identifier so its outputs can be referenced.
+
+## 11.7 `working-directory`
+
+```yaml
+- name: Run tests
+  run: pytest
+  working-directory: ./backend
+```
+
+## 11.8 `shell`
+
+```yaml
+- name: Run Bash
+  shell: bash
+  run: |
+    echo "Hello"
+
+- name: Run PowerShell
+  shell: pwsh
+  run: |
+    Write-Output "Hello"
+```
+
+---
+
+# 12. Conditions and expressions
+
+## 12.1 `if`
+
+Conditions control whether jobs or steps execute.
+
+Branch condition:
+
+```yaml
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Deploying"
+```
+
+Event condition:
+
+```yaml
+if: github.event_name == 'push'
+```
+
+## 12.2 Status-check functions
+
+| Function | Meaning |
+|---|---|
+| `success()` | Previous steps/dependencies succeeded |
+| `failure()` | A preceding step or dependency failed |
+| `always()` | Run regardless of earlier success/failure or skip, subject to cancellation and other constraints |
+| `cancelled()` | Workflow has been cancelled |
+
+Example: upload failure logs:
+
+```yaml
+- name: Upload failure logs
+  if: failure()
+  run: echo "Uploading logs"
+```
+
+Example: cleanup or reporting:
+
+```yaml
+- name: Cleanup
+  if: always()
+  run: echo "Cleanup"
+```
+
+**Exam point:** Jobs that depend on failed jobs are normally skipped unless their condition allows them to run. `always()` does not override every cancellation or platform constraint.
+
+## 12.3 Other expression functions
+
+| Function | Purpose |
+|---|---|
+| `contains()` | Check whether a value contains another |
+| `startsWith()` | Check string prefix |
+| `endsWith()` | Check string suffix |
+| `format()` | Format a string |
+| `join()` | Join array values |
+| `hashFiles()` | Generate a hash from matching files |
+
+## 12.4 Contexts
+
+| Context | Purpose |
+|---|---|
+| `github` | Workflow and repository information |
+| `env` | Workflow environment variables |
+| `vars` | Configuration variables |
+| `secrets` | Secrets |
+| `job` | Current job information |
+| `jobs` | Job outputs in reusable workflows |
+| `steps` | Step information and outputs |
+| `runner` | Runner information |
+| `strategy` | Strategy information |
+| `matrix` | Current matrix combination |
+| `needs` | Dependencies and their outputs |
+| `inputs` | Workflow or action inputs |
+
+Useful GitHub properties:
+
+| Property | Meaning |
+|---|---|
+| `github.repository` | Repository owner/name |
+| `github.actor` | User who initiated workflow |
+| `github.sha` | Commit SHA |
+| `github.ref` | Branch or tag reference |
+| `github.event_name` | Triggering event |
+| `github.workflow` | Workflow name |
+| `runner.os` | Runner operating system |
+| `runner.temp` | Temporary directory |
+
+Expressions use `${{ }}`. This is GitHub expression syntax, not Bash syntax.
+
+---
+
+# 13. Matrix strategy
+
+Matrix strategy runs the same job with different configurations.
+
+## 13.1 Basic matrix
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/setup-python@<verified-version>
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - run: pytest
+```
+
+This creates three job executions.
+
+## 13.2 Multiple dimensions
+
+```yaml
+strategy:
+  matrix:
+    os: [ubuntu-latest, windows-latest]
+    python: ['3.12', '3.13']
+```
+
+Total combinations: 2 × 2 = 4.
+
+## 13.3 `include`
+
+Adds specific configurations:
+
+```yaml
+strategy:
+  matrix:
+    os: [ubuntu-latest, windows-latest]
+    include:
+      - os: ubuntu-latest
+        environment: development
+```
+
+## 13.4 `exclude`
+
+Removes combinations:
+
+```yaml
+strategy:
+  matrix:
+    os: [ubuntu-latest, windows-latest]
+    python: ['3.11', '3.12']
+    exclude:
+      - os: windows-latest
+        python: '3.11'
+```
+
+## 13.5 `fail-fast`
+
+```yaml
+strategy:
+  fail-fast: false
+  matrix:
+    python: ['3.11', '3.12', '3.13']
+```
+
+- `true`: When a matrix job fails, GitHub cancels running and queued jobs in that matrix.
+- `false`: Other matrix jobs continue.
+
+Default: `true`.
+
+## 13.6 `max-parallel`
+
+```yaml
+strategy:
+  max-parallel: 2
+  matrix:
+    python: ['3.11', '3.12', '3.13', '3.14']
+```
+
+At most two matrix jobs execute simultaneously.
+
+| Property | Purpose |
+|---|---|
+| `matrix` | Defines combinations |
+| `include` | Adds configurations |
+| `exclude` | Removes combinations |
+| `fail-fast` | Controls cancellation after matrix failure |
+| `max-parallel` | Limits simultaneous matrix jobs |
+
+---
+
+# 14. Environment variables, variables and secrets
+
+## 14.1 `env`
+
+Defines environment variables at workflow, job or step level.
+
+```yaml
+env:
+  APP_ENV: development
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "$APP_ENV"
+```
+
+More specific applicable values override broader ones.
+
+## 14.2 `vars`
+
+Accesses GitHub configuration variables stored at repository, organization or environment level.
+
+```yaml
+- name: Display environment
+  run: echo "${{ vars.APP_ENV }}"
+```
+
+## 14.3 `secrets`
+
+Stores sensitive values such as API keys and passwords.
+
+```yaml
+- name: Call API
+  env:
+    API_KEY: ${{ secrets.API_KEY }}
+  run: python app.py
+```
+
+### Comparison
+
+| Feature | `env` | `vars` | `secrets` |
+|---|---|---|---|
+| Purpose | Environment variables | Configuration values | Sensitive information |
+| Sensitive data | Not intended | Not intended | Yes |
+| Scope | Workflow/job/step | Repository/org/environment | Repository/org/environment |
+| Access | `$NAME` or `${{ env.NAME }}` | `${{ vars.NAME }}` | `${{ secrets.NAME }}` |
+
+Never hardcode credentials or print secrets in logs. GitHub masking is helpful but is not a guarantee against every form of accidental disclosure.
+
+---
+
+# 15. Permissions and security
+
+The `permissions` keyword controls what the automatically generated `GITHUB_TOKEN` can do.
+
+Example:
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+```
+
+Common permissions:
+
+| Permission | Purpose |
+|---|---|
+| `contents` | Repository contents |
+| `pull-requests` | Pull requests |
+| `issues` | Issues |
+| `actions` | Workflow actions |
+| `checks` | Check runs |
+| `packages` | Packages |
+| `deployments` | Deployments |
+| `security-events` | Security events |
+| `id-token` | Request OIDC token |
+
+Permission values: `read`, `write`, `none`.
+
+Example:
+
+```yaml
+permissions: read-all
+```
+
+Or:
+
+```yaml
+permissions: write-all
+```
+
+Job-level permissions:
+
+```yaml
+jobs:
+  build:
+    permissions:
+      contents: read
+
+  publish:
+    permissions:
+      contents: read
+      packages: write
+```
+
+Important points:
+
+1. `GITHUB_TOKEN` is automatically generated for workflow jobs.
+2. When explicit permissions are specified, unspecified permissions become `none`.
+3. Job-level permissions can restrict access for individual jobs.
+4. Follow least privilege.
+5. `id-token: write` allows requesting an OIDC token; it does not itself grant access to cloud resources.
+
+## 15.1 OIDC
+
+OIDC can be used to obtain short-lived cloud credentials without storing long-lived cloud credentials as GitHub secrets.
+
+```yaml
+permissions:
+  contents: read
+  id-token: write
+```
+
+The cloud identity provider must also trust the GitHub Actions identity and apply appropriate role/subject restrictions.
+
+## 15.2 Pin third-party actions
+
+For stronger supply-chain security, pin actions to a verified full commit SHA rather than relying only on a mutable tag.
+
+```yaml
+- uses: actions/checkout@<verified-full-commit-SHA>
+```
+
+## 15.3 Avoid script injection
+
+Do not directly interpolate untrusted event data into shell commands.
+
+Avoid constructing shell commands from untrusted pull-request titles, branch names or issue text. Prefer passing values through environment variables and quoting them safely.
+
+---
+
+# 16. Concurrency control
+
+The `concurrency` keyword controls workflow runs or jobs that belong to the same concurrency group.
+
+## 16.1 Workflow-level concurrency
+
+Cancel an older run when a newer run enters the same group:
+
+```yaml
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Building application"
+```
+
+- `group`: Identifies executions that are controlled together.
+- `cancel-in-progress: true`: Allows an existing running execution in that group to be cancelled when a newer one starts.
+
+## 16.2 Job-level concurrency
+
+```yaml
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: production-deployment
+      cancel-in-progress: false
+
+    steps:
+      - run: echo "Deploying application"
+```
+
+This controls the deployment job independently of other jobs.
+
+## 16.3 Queue pending deployments
+
+```yaml
+concurrency:
+  group: production-deployment
+  queue: max
+```
+
+`queue: max` permits up to 100 pending executions in the group.
+
+Important distinctions:
+
+| Configuration | Behavior |
+|---|---|
+| `cancel-in-progress: true` | Allows running execution to be cancelled |
+| `cancel-in-progress: false` | Running execution is not cancelled by this setting |
+| Default queue behavior | One running and at most one pending execution; a newer pending run can replace the older pending run |
+| `queue: max` | Allows up to 100 pending executions |
+
+`queue: max` cannot be combined with `cancel-in-progress: true`.
+
+**Scenario:** Production deployments must wait their turn and must not replace earlier pending deployments. Use a shared concurrency group and `queue: max`.
+
+---
+
+# 17. Timeouts and error handling
+
+## 17.1 `timeout-minutes`
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+```
+
+A step can also have a timeout:
+
+```yaml
+- name: Run tests
+  run: pytest
+  timeout-minutes: 5
+```
+
+## 17.2 `continue-on-error`
+
+```yaml
+- name: Optional security scan
+  run: echo "Running scan"
+  continue-on-error: true
+```
+
+This allows a failing step to continue without making the job fail in the usual way.
+
+Job-level example:
+
+```yaml
+jobs:
+  optional-test:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - run: echo "Experimental test"
+```
+
+## 17.3 `defaults`
+
+Set default shell and working directory:
+
+```yaml
+defaults:
+  run:
+    shell: bash
+    working-directory: ./src
+```
+
+Job-level example:
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: ./backend
+
+    steps:
+      - run: python app.py
+```
+
+| Keyword | Purpose |
+|---|---|
+| `timeout-minutes` | Limits execution time |
+| `continue-on-error` | Allows execution to continue after failure |
+| `defaults` | Sets default shell and working directory |
+
+---
+
+# 18. Artifacts and caching
+
+These concepts are different.
+
+## 18.1 Upload artifacts
+
+Artifacts store files generated by a workflow run.
+
+```yaml
+- name: Upload build output
+  uses: actions/upload-artifact@<verified-version>
+  with:
+    name: application-build
+    path: dist/
+```
+
+## 18.2 Download artifacts
+
+```yaml
+- name: Download build output
+  uses: actions/download-artifact@<verified-version>
+  with:
+    name: application-build
+    path: downloaded/
+```
+
+Use artifacts to share build outputs between jobs or retain test reports.
+
+## 18.3 Dependency caching
+
+Caching avoids repeatedly downloading dependencies.
+
+```yaml
+- name: Cache pip dependencies
+  uses: actions/cache@<verified-version>
+  with:
+    path: ~/.cache/pip
+    key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+    restore-keys: |
+      ${{ runner.os }}-pip-
+```
+
+The cache key identifies the cache. `restore-keys` provides fallback prefixes.
+
+## 18.4 Artifacts vs cache
+
+| Feature | Artifacts | Cache |
+|---|---|---|
+| Purpose | Store generated files | Reuse dependencies and other repeatable data |
+| Example | Build package, test report | pip/npm dependencies |
+| Main use | Share or retain workflow outputs | Improve performance |
+
+**Exam scenarios:**
+
+- Share a compiled application between build and deployment jobs: use artifacts.
+- Avoid downloading Python dependencies on every run: use caching.
+
+---
+
+# 19. Environments and deployment approvals
+
+GitHub Environments can control deployments to development, staging and production.
+
+```yaml
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Deploy application
+        run: echo "Deploying to production"
+```
+
+Environment features can include:
+
+- Required reviewers.
+- Deployment protection rules.
+- Environment-specific secrets.
+- Environment-specific variables.
+- Deployment branch restrictions.
+
+Example with a URL:
+
+```yaml
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://example.com
+
+    steps:
+      - run: echo "Production deployment"
+```
+
+**Exam scenario:** Production deployment requires manager approval. Configure a GitHub Environment with required reviewers and appropriate protection rules.
+
+---
+
+# 20. Containers and service containers
+
+## 20.1 Job container
+
+Runs a job inside a container.
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    container:
+      image: python:3.12
+
+    steps:
+      - uses: actions/checkout@<verified-version>
+      - run: python --version
+```
+
+## 20.2 Service containers
+
+Run supporting services such as PostgreSQL, Redis or MySQL.
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+
+    steps:
+      - uses: actions/checkout@<verified-version>
+      - run: echo "Run database integration tests"
+```
+
+| Job container | Service container |
+|---|---|
+| Runs the job environment | Provides a supporting service |
+| Example: Python container | Example: PostgreSQL |
+| Job steps execute inside it | Job steps connect to it |
+
+---
+
+# 21. Reusable workflows and composite actions
+
+## 21.1 Reusable workflows – `workflow_call`
+
+Reusable workflows avoid duplicating workflow logic.
+
+Create `.github/workflows/reusable-build.yml`:
+
+```yaml
+name: Reusable Build
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@<verified-version>
+
+      - uses: actions/setup-python@<verified-version>
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - run: python --version
+```
+
+Call it from another workflow:
+
+```yaml
+name: Main Pipeline
+
+on: push
+
+jobs:
+  build:
+    uses: ./.github/workflows/reusable-build.yml
+    with:
+      python-version: '3.12'
+```
+
+Important concepts:
+
+- `workflow_call`: Makes a workflow reusable.
+- `inputs`: Accepts parameters.
+- `secrets`: Passes sensitive information.
+- `outputs`: Returns values from the called workflow.
+
+## 21.2 Composite actions
+
+A composite action packages multiple steps into a reusable action.
+
+Example structure:
+
+```text
+.github/
+└── actions/
+    └── setup-python/
+        └── action.yml
+```
+
+Example `action.yml`:
+
+```yaml
+name: Setup Python Environment
+description: Install Python dependencies
+
+inputs:
+  python-version:
+    description: Python version
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@<verified-version>
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install dependencies
+      shell: bash
+      run: pip install -r requirements.txt
+```
+
+Use it:
+
+```yaml
+steps:
+  - uses: actions/checkout@<verified-version>
+
+  - name: Setup application
+    uses: ./.github/actions/setup-python
+    with:
+      python-version: '3.12'
+```
+
+## 21.3 Action types
+
+| Action type | Implementation |
+|---|---|
+| JavaScript action | JavaScript/TypeScript |
+| Docker container action | Dockerfile |
+| Composite action | YAML containing multiple steps |
+
+Action metadata is defined in `action.yml` or `action.yaml`.
+
+## 21.4 Reusable workflow vs composite action
+
+| Feature | Reusable workflow | Composite action |
+|---|---|---|
+| Typical location | `.github/workflows/` | Action directory |
+| Definition | Workflow YAML | `action.yml` |
+| Can contain jobs | Yes | No |
+| Can contain steps | Yes | Yes |
+| Called from | Job level | Step level |
+| Main purpose | Reuse complete workflows | Reuse a group of steps |
+
+Reusable workflow call:
+
+```yaml
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+```
+
+Composite action call:
+
+```yaml
+steps:
+  - uses: ./.github/actions/my-action
+```
+
+---
+
+# 22. Complete example: LangGraph agent CI/CD workflow
+
+This illustrative workflow combines triggers, permissions, concurrency, environment variables, job outputs, matrix testing, artifacts and deployment protection.
+
+```yaml
+name: LangGraph Agent CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+
+  pull_request:
+    branches: [main]
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+
+  build:
+    name: Build Agent
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+
+    steps:
+      - uses: actions/checkout@<verified-version>
+
+      - uses: actions/setup-python@<verified-version>
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate version
+        id: version
+        run: echo "value=1.0.0" >> "$GITHUB_OUTPUT"
+
+      - name: Compile application
+        run: python -m compileall src
+
+  test:
+    name: Run Tests
+    needs: build
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@<verified-version>
+
+      - uses: actions/setup-python@<verified-version>
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Execute tests
+        run: pytest
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@<verified-version>
+        with:
+          name: test-results-${{ matrix.python }}
+          path: test-results/
+
+  deploy:
+    name: Deploy Agent
+    needs: [build, test]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    environment: production
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Deploy
+        run: |
+          echo "Deploying version ${{ needs.build.outputs.version }}"
+```
+
+This is a teaching example, not a complete production deployment. A real deployment needs the appropriate cloud authentication, deployment commands, artifact handling and environment configuration.
+
+
+
+## 1. Workflow commands
+
+These commands are written to standard output by a workflow step. GitHub Actions interprets them.
+
+| Command | Purpose | Example |
+|---|---|---|
+| `::group::` | Starts a collapsible log group | `echo "::group::Install dependencies"` |
+| `::endgroup::` | Ends the current log group | `echo "::endgroup::"` |
+| `::debug::` | Writes a debug message (visible when debug logging is enabled) | `echo "::debug::Checking configuration"` |
+| `::notice::` | Creates a notice annotation | `echo "::notice::Build completed"` |
+| `::warning::` | Creates a warning annotation | `echo "::warning::Using a fallback value"` |
+| `::error::` | Creates an error annotation | `echo "::error::Build failed"` |
+| `::add-mask::` | Masks a value in subsequent logs | `echo "::add-mask::$TOKEN"` |
+| `::stop-commands::` | Temporarily stops workflow-command processing | `echo "::stop-commands::$TOKEN"` |
+| `::{token}::` | Resumes command processing after `stop-commands` | `echo "::$TOKEN::"` |
+
+### Annotation with file and line
+
+```bash
+echo "::error file=app.py,line=25,col=4::Invalid configuration"
+echo "::warning file=app.py,line=30::Deprecated function"
+echo "::notice::Deployment completed"
+```
+
+### Group related log output
+
+```bash
+echo "::group::Install dependencies"
+python -m pip install -r requirements.txt
+echo "::endgroup::"
+
+echo "::group::Run tests"
+pytest
+echo "::endgroup::"
+```
+
+### Mask a sensitive value
+
+```bash
+echo "::add-mask::$API_TOKEN"
+```
+
+Mask the value before any command could print it. Masking is a logging safeguard, not a replacement for securely storing secrets.
+
+---
+
+## 2. Environment files
+
+Use these files to pass values between steps or add information to the workflow environment.
+
+| File | Purpose |
+|---|---|
+| `$GITHUB_ENV` | Sets an environment variable for subsequent steps in the same job |
+| `$GITHUB_OUTPUT` | Sets an output for the current step |
+| `$GITHUB_PATH` | Adds a directory to `PATH` for subsequent steps |
+| `$GITHUB_STEP_SUMMARY` | Adds Markdown content to the job summary |
+| `$GITHUB_STATE` | Shares state between an action's `pre`, `main`, and `post` steps |
+
+### Set an environment variable for later steps
+
+```yaml
+- name: Set application environment
+  run: echo "APP_ENV=production" >> "$GITHUB_ENV"
+
+- name: Read application environment
+  run: echo "$APP_ENV"
+```
+
+The step that writes to `GITHUB_ENV` does **not** see the new value itself. Subsequent steps do.
+
+### Set and use a step output
+
+```yaml
+- name: Generate version
+  id: version
+  run: echo "value=1.2.0" >> "$GITHUB_OUTPUT"
+
+- name: Use version
+  run: echo "Version: ${{ steps.version.outputs.value }}"
+```
+
+### Add a directory to PATH
+
+```yaml
+- name: Add tool directory
+  run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+```
+
+### Add a job summary
+
+```yaml
+- name: Write summary
+  run: |
+    echo "## Test results" >> "$GITHUB_STEP_SUMMARY"
+    echo "- All tests passed" >> "$GITHUB_STEP_SUMMARY"
+```
+
+---
+
+## 3. Essential workflow YAML properties
+
+These are YAML keys, **not** workflow commands.
+
+| Property | Used in | Purpose |
+|---|---|---|
+| `name` | Workflow / job / step | Gives an item a readable name |
+| `on` | Workflow | Defines which events trigger the workflow |
+| `push`, `pull_request`, `workflow_dispatch` | Under `on` | Common trigger events |
+| `jobs` | Workflow | Defines the jobs in a workflow |
+| `runs-on` | Job | Selects the runner |
+| `steps` | Job | Lists the steps in a job |
+| `uses` | Step | Runs an action |
+| `run` | Step | Runs a shell command or script |
+| `with` | Step | Passes inputs to an action |
+| `env` | Workflow / job / step | Defines environment variables |
+| `secrets` | Expressions / reusable workflows | References stored secrets or passes secrets |
+| `permissions` | Workflow / job | Sets the `GITHUB_TOKEN` permissions |
+| `needs` | Job | Makes a job depend on another job |
+| `if` | Job / step | Runs a job or step only when a condition is true |
+| `outputs` | Job / step context | Exposes values for later steps or dependent jobs |
+| `strategy` | Job | Configures matrix execution |
+| `matrix` | Under `strategy` | Runs a job with combinations of values |
+| `fail-fast` | Under `strategy` | Controls whether matrix jobs are cancelled after a failure |
+| `max-parallel` | Under `strategy` | Limits concurrent matrix jobs |
+| `continue-on-error` | Job / step | Allows execution to continue after a failure |
+| `timeout-minutes` | Job / step | Sets a time limit |
+| `defaults` | Workflow / job | Sets default run options |
+| `working-directory` | Under `defaults.run` or `run` step | Sets the working directory |
+| `shell` | Under `defaults.run` or `run` step | Selects the shell |
+| `services` | Job | Defines service containers, such as a database |
+| `container` | Job | Runs job steps inside a container |
+| `environment` | Job | Associates a job with a deployment environment |
+| `concurrency` | Workflow / job | Controls overlapping workflow or job runs |
+
+---
+
+## 4. Common expressions and conditions
+
+| Expression | Meaning |
+|---|---|
+| `${{ github.event_name }}` | Event that triggered the workflow |
+| `${{ github.ref }}` | Git ref that triggered the workflow |
+| `${{ github.sha }}` | Commit SHA |
+| `${{ github.actor }}` | User or app that triggered the workflow |
+| `${{ runner.os }}` | Operating system of the runner |
+| `${{ secrets.SECRET_NAME }}` | A repository, organization, or environment secret |
+| `${{ vars.VARIABLE_NAME }}` | A configuration variable |
+| `${{ env.VARIABLE_NAME }}` | An environment variable |
+| `${{ steps.STEP_ID.outputs.NAME }}` | Output from a previous step |
+| `${{ needs.JOB_ID.outputs.NAME }}` | Output from a dependency job |
+| `${{ matrix.python-version }}` | Current matrix value |
+
+Common conditions:
+
+```yaml
+if: github.event_name == 'pull_request'
+if: github.ref == 'refs/heads/main'
+if: success()
+if: failure()
+if: always()
+if: cancelled()
+```
+
+Use `always()` carefully: it can cause a step to run even after earlier steps fail or are cancelled.
+
+---
+
+## 5. Important job and workflow patterns
+
+### Job dependency with `needs`
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Build"
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Test after build"
+```
+
+### Matrix strategy
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+```
+
+A matrix creates separate job runs for the configured combinations.
+
+### Concurrency
+
+```yaml
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+```
+
+- `concurrency.group` identifies runs that belong to the same concurrency group.
+- `cancel-in-progress: true` cancels an in-progress run in that group when a newer run starts.
+- This is different from the log command `::group::`.
+
+### Job permissions
+
+```yaml
+permissions:
+  contents: read
+  pull-requests: write
+```
+
+Grant only the permissions the workflow needs. Setting explicit permissions is safer than relying on broad defaults.
+
+---
+
+## 6. Common GitHub Actions CLI commands
+
+These commands are run locally with the GitHub CLI (`gh`), not inside workflow YAML.
+
+| Command | Purpose |
+|---|---|
+| `gh auth login` | Authenticate GitHub CLI |
+| `gh workflow list` | List workflows |
+| `gh workflow view` | View a workflow |
+| `gh workflow run <workflow>` | Manually trigger a workflow |
+| `gh run list` | List workflow runs |
+| `gh run view <run-id>` | View a run |
+| `gh run watch <run-id>` | Watch a run |
+| `gh run view <run-id> --log` | View run logs |
+| `gh run rerun <run-id>` | Rerun a workflow |
+| `gh run cancel <run-id>` | Cancel a workflow run |
+
+---
+
+## 7. Complete mini example
+
+```yaml
+name: Python CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          echo "::group::Install dependencies"
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          echo "::endgroup::"
+
+      - name: Run tests
+        id: tests
+        run: |
+          pytest
+          echo "result=passed" >> "$GITHUB_OUTPUT"
+
+      - name: Write summary
+        if: always()
+        run: |
+          echo "## CI result" >> "$GITHUB_STEP_SUMMARY"
+          echo "Test step result: ${{ steps.tests.outcome }}" >> "$GITHUB_STEP_SUMMARY"
+```
+
+---
+
+
+
+
