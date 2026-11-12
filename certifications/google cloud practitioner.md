@@ -2,1400 +2,603 @@
 
 ## 1. Google Cloud Projects
 
-A Google Cloud project is a fundamental organizing entity for managing
-Google Cloud resources, services, APIs, billing associations, and access
-control.
+Think of a [Google Cloud project](https://cloud.google.com/compute/docs/overview) as a main workspace or top-level folder in Google Cloud. Every resource you create—such as virtual machines (VMs), databases, [Cloud Storage](https://cloud.google.com/storage/docs) buckets, and networks—must live inside a project.
 
-A project can contain resources such as virtual machines, databases,
-storage buckets, and networks.
+A project controls four main things:
 
-### 1.1 Project identifiers
+* **Resources**: All the VMs, disks, and buckets inside it.
 
-  -----------------------------------------------------------------------
-  Identifier              Description             Example
-  ----------------------- ----------------------- -----------------------
-  Project name            Human-readable display  My Development Project
-                          name. It does not need  
-                          to be globally unique.  
+* **Billing**: Which payment account pays for those resources.
 
-  Project ID              Globally unique         `my-project-123`
-                          identifier used in      
-                          commands and APIs.      
+* **Permissions (IAM)**: Who is allowed to view or change things inside the project.
 
-  Project number          Automatically generated `123456789012`
-                          numeric identifier used 
-                          by Google Cloud.        
-  -----------------------------------------------------------------------
+* **Enabled APIs**: Which Google Cloud services are turned on inside the project.
 
-Important points:
+### 1.1 Three Ways Google Cloud Identifies a Project
 
--   Project IDs are globally unique across Google Cloud.
--   Project IDs are selected when creating a project and generally
-    cannot be changed later.
--   Project names can be changed.
--   Project numbers are automatically generated and cannot be changed.
--   Project IDs and project numbers both identify projects, but serve
-    different purposes.
+Every project has three different labels. Knowing the difference saves you from errors when running commands:
 
-### 1.2 Practical implementation using gcloud
+| Identifier | What It Means in Simple Words | Can You Change It Later? | Example | 
+| ----- | ----- | ----- | ----- | 
+| **Project name** | A friendly display name you read in the web console ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). Two projects can have the same name. | Yes, anytime. | `My Development Project` | 
+| **Project ID** | A unique ID you type in `gcloud` commands and code ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). No two projects in the world can share the same Project ID. | No. Once created, it is permanent. | `my-project-123` | 
+| **Project number** | A number that Google Cloud creates automatically behind the scenes for internal tracking ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | No. Google Cloud sets it permanently. | `123456789012` | 
 
-``` bash
-# Display the currently selected project
+### 1.2 Useful `gcloud` Commands for Projects
+
+```
+# Check which project you are currently working in
 gcloud config get-value project
 
-# List projects accessible to the current account
+# See a list of all projects your account can open
 gcloud projects list
 
-# Set the active project
-gcloud config set project PROJECT_ID
+# Switch to a specific project (always use the Project ID here, not the Project Name)
+gcloud config set project my-project-123
 
-# Display project details
-gcloud projects describe PROJECT_ID
+# Show all three identifiers (Name, ID, and Number) for a project
+gcloud projects describe my-project-123
+
 ```
 
-### 1.3 Real-world example
+### 1.3 Real-World Example: Why Create Multiple Projects?
 
-For an employee policy chatbot, separate projects can be created for
-different environments:
+Suppose you are building an employee policy chatbot for your company. Instead of putting test work and live company data into the same project, you create three separate projects:
 
--   `policy-bot-dev`
--   `policy-bot-test`
--   `policy-bot-prod`
+* **`policy-bot-dev`**: A safe playground where developers write and test new code.
 
-This helps isolate resources, permissions, billing, and configurations
-across environments.
+* **`policy-bot-test`**: A testing environment where QA checks the app before release.
 
-------------------------------------------------------------------------
+* **`policy-bot-prod`**: The live environment used by real employees, locked down with strict security rules.
+
+Keeping these in separate projects ensures that a mistake in `policy-bot-dev` can never accidentally delete live data in `policy-bot-prod`.
 
 ## 2. Identity and Access Management (IAM)
 
-Google Cloud Identity and Access Management (IAM) controls who can
-access Google Cloud resources and what actions they can perform.
+Google Cloud **IAM (Identity and Access Management)** is the security system that decides **who** is allowed to do **what** on **which resource**.
 
-An IAM policy binding connects a principal, a role, and a resource.
+### 2.1 The Three Parts of an IAM Rule
 
-### 2.1 Three components of an IAM binding
+Every access rule (called an **IAM policy binding**) connects three things:
 
-  -----------------------------------------------------------------------
-  Component              Description            Example
-  ---------------------- ---------------------- -------------------------
-  Principal              The identity that      `developer@example.com`
-                         needs access.          
+**Principal (Who) → Role (What they can do) → Resource (Where they can do it)**
 
-  Role                   A collection of        Compute Instance Admin
-                         permissions granted to 
-                         the principal.         
+| Part | Simple Explanation | Example | 
+| ----- | ----- | ----- | 
+| **Principal** | The person or app asking for access ([OS Login](https://cloud.google.com/compute/docs/oslogin)). | `user:developer@example.com` | 
+| **Role** | A bundle of permissions that allows specific actions ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | `Compute Instance Admin` (can create, start, and stop VMs) | 
+| **Resource** | The project, storage bucket, or VM where that access is given ([Cloud Storage documentation](https://cloud.google.com/storage/docs)). | Project `policy-bot-dev` | 
 
-  Resource               The Google Cloud       A development project
-                         resource on which      
-                         access is granted.     
-  -----------------------------------------------------------------------
+### 2.2 Three Types of IAM Roles
 
-The relationship can be represented as:
+| Role Type | Simple Explanation | When to Use It | 
+| ----- | ----- | ----- | 
+| **Basic roles** | Very broad roles (`Owner`, `Editor`, `Viewer`) that affect the entire project ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | Use only for quick practice or read-only checks (`Viewer`). Avoid `Owner` and `Editor` in real projects because they give too much power. | 
+| **Predefined roles** | Ready-made roles created by Google for one specific job (for example, only reading files from a storage bucket) ([Cloud Storage documentation](https://cloud.google.com/storage/docs)). | Use these most of the time in real projects. | 
+| **Custom roles** | Roles you build yourself by hand-picking exact permissions ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | Use when none of Google's predefined roles fit your exact security rule. | 
 
-**Principal → Role → Permissions → Resource**
+### 2.3 The Principle of Least Privilege
 
-For example, a developer may receive the Compute Instance Admin role on
-a development project to manage virtual machine instances.
+**Least privilege** simply means: *give people and apps only the exact permissions they need to do their job, and nothing extra.*
 
-### 2.2 Role types
+* **Bad example**: Giving a developer the `Project Owner` role when they only need to check if a VM is running.
 
-  ---------------------------------------------------------------------
-  Role type                          Description
-  ---------------------------------- ----------------------------------
-  Basic roles                        Broad roles such as Owner, Editor,
-                                     and Viewer.
+* **Good example**: Giving that developer the `Compute Viewer` role so they can look at the VM without accidentally deleting it or changing billing.
 
-  Predefined roles                   Google-managed roles designed for
-                                     specific services and tasks.
+### 2.4 What Is a Service Account?
 
-  Custom roles                       Roles containing a selected set of
-                                     permissions defined by an
-                                     organization.
-  ---------------------------------------------------------------------
+Normal user accounts (`developer@example.com`) are for human beings. A **Service Account** is an account made for a **machine or application**—such as a [Compute Engine](https://cloud.google.com/compute/docs/overview) VM or a Cloud Run app.
 
-### 2.3 Principle of least privilege
+For example, if your app running on a VM needs to download a file from a private [Cloud Storage](https://cloud.google.com/storage/docs) bucket, you do not put your personal Google password on the VM. Instead, you create a Service Account, give that Service Account permission to read the bucket, and attach the Service Account to the VM.
 
-Grant users only the permissions they need to perform their work.
+### 2.5 Practical IAM & Service Account Commands
 
-For example, a developer who only needs to view VM instances should not
-receive the Project Owner role.
+Permissions flow downward (**Organization → Folder → Project → Resource**). If you give someone a role on a **Project**, they get that access on every VM and bucket inside the project. If you give a role on a single **Bucket**, they only get access to that one bucket.
 
-### 2.4 Service accounts
-
-A service account represents an application, virtual machine, or other
-workload rather than an individual person.
-
-Example:
-
-A Cloud Run application needs to access Cloud Storage. Assign a service
-account to the Cloud Run service and grant that service account only the
-required Storage permissions.
-
-### 2.5 Practical IAM commands
-
-``` bash
-# Display the IAM policy for a project
+```
+# 1. See who currently has access to your project
 gcloud projects get-iam-policy PROJECT_ID
 
-# Grant the Viewer role to a user at project level
+# 2. Give a developer read-only (Viewer) access to the project
 gcloud projects add-iam-policy-binding PROJECT_ID \
   --member="user:developer@example.com" \
   --role="roles/viewer"
+
+# 3. Create a Service Account for an application or VM
+gcloud iam service-accounts create policy-bot-sa \
+  --display-name="Policy Bot Service Account"
+
+# 4. List all Service Accounts in your project
+gcloud iam service-accounts list
+
+# 5. Allow that Service Account to read files from one specific storage bucket
+gcloud storage buckets add-iam-policy-binding gs://YOUR_BUCKET_NAME \
+  --member="serviceAccount:policy-bot-sa@PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.objectViewer"
+
 ```
-
-**Important:** IAM permissions can be inherited through the Google Cloud
-resource hierarchy. A project-level role binding can apply to resources
-within that project.
-
-------------------------------------------------------------------------
 
 ## 3. Google Cloud APIs
 
-A Google Cloud API allows applications and services to interact
-programmatically with Google Cloud resources.
+An **API (Application Programming Interface)** is the control switch behind every Google Cloud service. Whether you click a button in the web console, run a `gcloud` command, or write Python or .NET code, your request talks to a [Google Cloud API](https://cloud.google.com/compute/docs/overview):
 
-Examples:
+* **Compute Engine API (`compute.googleapis.com`)**: Creates and manages virtual machines and load balancers ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)).
 
--   **Compute Engine API:** Manage virtual machines.
--   **Cloud Storage API:** Manage storage buckets and objects.
--   **Cloud Run Admin API:** Deploy and manage Cloud Run services.
--   **BigQuery API:** Query and manage BigQuery resources.
+* **Cloud Storage API (`storage.googleapis.com`)**: Manages storage buckets and files ([Cloud Storage documentation](https://cloud.google.com/storage/docs)).
 
-Applications can interact with Google Cloud APIs through:
+* **Cloud Pub/Sub API (`pubsub.googleapis.com`)**: Sends and receives messages between apps.
 
--   REST APIs
--   Client libraries for languages such as Python, Java, .NET, and Go
--   Google Cloud CLI (`gcloud`)
+* **Cloud Run Admin API (`run.googleapis.com`)**: Runs containerized apps.
 
-### 3.1 API enablement
+### 3.1 Why Do You Need to Enable APIs?
 
-Google Cloud APIs generally need to be enabled in a project before the
-corresponding services can be used.
+In a brand-new project, most APIs are **turned off** by default so you do not accidentally start services or get billed for things you aren't using. Before you can create a VM, you must turn on the Compute Engine API.
 
-For example, to create virtual machines using Compute Engine, enable the
-Compute Engine API.
+### 3.2 Important Difference: Turning on an API vs. IAM Permissions
 
-In some training lab environments, APIs may already be enabled. In
-projects created independently, you may need to enable the required APIs
-yourself.
+Beginners often wonder why they get a "Permission Denied" error even after enabling an API. Both of these steps are required:
 
-### 3.2 Practical commands
+| Step | What It Does in Simple Words | Who It Affects | Command | 
+| ----- | ----- | ----- | ----- | 
+| **1. API Enablement** | Flips the master power switch **ON** for that service inside the project ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | The whole project | `gcloud services enable compute.googleapis.com` | 
+| **2. IAM Permission** | Gives a specific person or Service Account a badge allowing them to use that service ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | One user or Service Account | `gcloud projects add-iam-policy-binding ...` | 
 
-``` bash
-# List enabled APIs
+Also remember: turning on an API is free by itself, but creating resources with that API (like starting a VM) will cost money.
+
+### 3.3 Practical Commands for APIs
+
+```
+# See which APIs are currently turned ON in your project
 gcloud services list --enabled
 
-# List available APIs
+# See all APIs available in Google Cloud
 gcloud services list --available
 
-# Enable Compute Engine API
-gcloud services enable compute.googleapis.com
+# Turn on Compute Engine, Cloud Storage, and Pub/Sub APIs at the same time
+gcloud services enable \
+  compute.googleapis.com \
+  storage.googleapis.com \
+  pubsub.googleapis.com
 
-# Enable Cloud Storage API
-gcloud services enable storage.googleapis.com
-
-# Enable Pub/Sub API
-gcloud services enable pubsub.googleapis.com
-
-# Check whether the Compute Engine API is enabled
+# Check if the Compute Engine API is turned on
 gcloud services list --enabled \
   --filter="name:compute.googleapis.com"
+
 ```
-
-### 3.3 Important distinction: API enablement vs IAM permissions
-
-Enabling an API does not automatically grant users permission to access
-it.
-
--   **API enablement** makes the API available for use in a project.
--   **IAM permissions** determine which identities can perform specific
-    actions.
-
-Enabling an API also does not mean the service is free. Usage may incur
-charges.
-
-------------------------------------------------------------------------
 
 ## 4. Cloud Pub/Sub
 
-Google Cloud Pub/Sub is a fully managed messaging service that enables
-asynchronous communication between applications and services.
+**Cloud Pub/Sub** (Publish/Subscribe) is a messaging service that lets different parts of an application talk to each other **without waiting on each other**.
 
-It follows a **publish-subscribe messaging model**. Applications do not
-need to communicate directly with each other; they exchange messages
-through topics and subscriptions.
+Think of it like a post office drop box:
 
-### 4.1 Main components
+* Without Pub/Sub: Your frontend app calls the backend directly and freezes while waiting for a slow job to finish. If the backend is down, the request fails.
 
-  ---------------------------------------------------------------------
-  Component                          Description
-  ---------------------------------- ----------------------------------
-  Publisher                          Application that sends messages.
+* With Pub/Sub: Your frontend drops a message into a **Topic** and immediately moves on. The backend picks up the message from a **Subscription** whenever it is ready.
 
-  Topic                              Named resource to which publishers
-                                     send messages.
+### 4.1 The Six Main Parts of Pub/Sub
 
-  Subscription                       Resource through which subscribers
-                                     receive messages.
+| Component | Simple Explanation | Chatbot Example | 
+| ----- | ----- | ----- | 
+| **Publisher** | The app that sends the message ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | The employee policy chatbot frontend. | 
+| **Topic** | The named mailbox where the publisher drops messages. | `employee-events` | 
+| **Subscription** | A waiting line attached to a topic that holds messages for a specific worker app. | `employee-events-sub` | 
+| **Subscriber** | The worker app that picks up the message and does the background work. | A background service that saves audit logs. | 
+| **Message** | The actual text or JSON data sent by the publisher. | `"Employee policy request submitted"` | 
+| **Acknowledgment (ACK)** | A "thumbs up" reply from the subscriber telling Pub/Sub: *"I finished the job—you can delete this message from the queue now."* | Sent after the worker saves the log. | 
 
-  Subscriber                         Application that receives and
-                                     processes messages.
+### 4.2 Step-by-Step: How a Message Travels Through Pub/Sub
 
-  Message                            Data or event sent by a publisher.
+1. **Send**: A **Publisher** sends a message to a **Topic**.
 
-  Acknowledgment (ACK)               Confirmation that a message has
-                                     been successfully processed.
-  ---------------------------------------------------------------------
+2. **Save**: Pub/Sub safely stores the message on disk and forwards it to every **Subscription** attached to that topic.
 
-### 4.2 How Pub/Sub works
+3. **Receive**: A **Subscriber** app receives the message from its subscription and performs the task.
 
-1.  A publisher sends a message to a topic.
-2.  Pub/Sub stores and distributes the message.
-3.  A subscription makes the message available to its subscribers.
-4.  A subscriber receives and processes the message.
-5.  The subscriber acknowledges successful processing.
+4. **Confirm (ACK)**: The subscriber sends back an **ACK**. If the subscriber crashes before sending an ACK, Pub/Sub waits for the timeout and sends the message again so no work is lost.
 
-### 4.3 Pull vs. push subscriptions
+### 4.3 Pull vs. Push Delivery
 
-  ---------------------------------------------------------------------
-  Pull subscription                  Push subscription
-  ---------------------------------- ----------------------------------
-  The subscriber requests messages.  Pub/Sub sends messages to a
-                                     configured HTTPS endpoint.
+How does the subscriber get the message from the subscription? There are two ways:
 
-  The subscriber controls when to    Pub/Sub initiates delivery.
-  retrieve messages.                 
+| Feature | Pull Subscription (Subscriber Asks) | Push Subscription (Pub/Sub Sends) | 
+| ----- | ----- | ----- | 
+| **How it works** | The subscriber app reaches out and asks Pub/Sub: *"Do you have any messages for me right now?"* ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)) | Pub/Sub automatically sends the message straight to your app's HTTPS web address (`POST` request). | 
+| **Who controls the speed?** | The subscriber app pulls messages only when it has free CPU capacity. | Pub/Sub pushes messages as they arrive. | 
+| **Best used for** | Background workers running on [Compute Engine](https://cloud.google.com/compute/docs/overview) VMs that process heavy batches at their own pace. | Web services or Cloud Run apps that already listen for HTTPS requests. | 
 
-  Useful for background workers and  Useful for HTTP-based services and
-  services that control their        endpoints.
-  polling.                           
-  ---------------------------------------------------------------------
+### 4.4 Practical Pub/Sub Commands
 
-### 4.4 Real-world implementation example
-
-Consider an employee policy chatbot.
-
-When an employee submits a policy-related request:
-
-1.  The chatbot publishes an event to a Pub/Sub topic.
-2.  A subscription makes the event available to a background processing
-    service.
-3.  The service receives and processes the event.
-4.  The result can be stored or forwarded to another service.
-
-This decouples the chatbot from background processing, allowing each
-component to operate independently.
-
-### 4.5 Practical implementation using gcloud
-
-``` bash
-# Create a topic
+```
+# 1. Create a topic (the mailbox)
 gcloud pubsub topics create employee-events
 
-# Create a subscription for the topic
+# 2. Create a pull subscription connected to that topic (the waiting line)
 gcloud pubsub subscriptions create employee-events-sub \
   --topic=employee-events
 
-# Publish a message
+# 3. Publish (send) a message to the topic
 gcloud pubsub topics publish employee-events \
   --message="Employee policy request submitted"
 
-# Pull messages and automatically acknowledge them
+# 4. Pull (read) the message and automatically send an ACK so it is marked finished
 gcloud pubsub subscriptions pull employee-events-sub \
   --auto-ack
+
 ```
 
-### 4.6 Important Pub/Sub concepts to learn
+### 4.5 Golden Rule for Pub/Sub: Handle Duplicate Messages Safely
 
--   Message acknowledgment and acknowledgment deadlines
--   Message retention
--   Message ordering
--   Dead-letter topics
--   Retry policies
--   Push and pull delivery
--   Exactly-once delivery, where supported and configured
--   At-least-once delivery
--   IAM permissions for publishers and subscribers
+By default, Pub/Sub promises **at-least-once delivery**. That means Pub/Sub will never lose your message, but occasionally—if a network delay happens right when your worker sends its ACK—Pub/Sub might deliver the **exact same message twice**.
 
-**Important:** Pub/Sub generally provides at-least-once delivery.
-Subscriber applications should be designed to handle duplicate messages
-safely. Exactly-once delivery has specific supported configurations and
-limitations; it should not be assumed to apply to every delivery setup.
+Always write your subscriber code so that receiving the same message twice does not cause harm (for example, check if `order_id = 501` was already saved before inserting it again). If a broken message keeps crashing your worker, configure a **Dead-Letter Topic** so Pub/Sub moves the bad message to a separate holding topic after a few retries.
 
-------------------------------------------------------------------------
+## 5. Google Cloud Compute Engine — Practical Guide
 
+[Compute Engine](https://cloud.google.com/compute/docs/overview) lets you create and run Virtual Machines (VMs)—which are complete Linux or Windows computers running inside Google's data centers.
 
+### 5.1 What Is a VM and When Should You Use One?
 
-# 8. Google Cloud Compute Engine -- Practical Learning Guide
+A VM works just like a physical computer server. It has:
 
-This chapter expands the Compute Engine lab notes into a practical
-guide. It explains the commands, why each step is needed, what happens
-behind the scenes, and how the same ideas are used in real projects.
+* **vCPUs and Memory (Machine Type)**: How much processing power and RAM it gets.
 
-The examples use Linux VMs, Debian, `gcloud`, a frontend/backend
-application, and a zonal Managed Instance Group (MIG), as in the
-supplied lab notes.
+* **A Boot Disk**: The main hard drive holding the operating system (such as Debian Linux).
 
-> **Important:** Lab commands often use temporary project IDs, bucket
-> names, zones, and simplified settings. Replace these values with the
-> ones in your own project. Before running commands that delete, format,
-> replace, or expose resources, check the target carefully.
+* **Extra Data Disks (Optional)**: Extra hard drives you attach to store application files.
 
-## 8.1 What is Compute Engine?
+* **Networking**: An internal IP address (and optional public IP address) plus firewall rules.
 
-**Compute Engine** is a Google Cloud service that lets you create and
-run virtual machines (VMs) on Google's infrastructure.
+* **A Service Account**: The VM's identity for talking to other Google Cloud services.
 
-A VM behaves like a computer or server. It has:
+* **A Startup Script (Optional)**: A script of commands the VM runs automatically every time it turns on.
 
--   A machine type that determines its virtual CPUs and memory.
--   A boot disk that contains the operating system.
--   Optional additional disks for application data.
--   A network interface for communication.
--   A service account that gives the VM an identity when it accesses
-    Google Cloud services.
--   Optional startup scripts that configure the VM when it boots.
+**When should you use Compute Engine?**
+Use a VM when you need full control over the Linux or Windows operating system, need to attach custom block disks, or want to install specific server software yourself ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). If you just want to run a simple web API without managing Linux updates or disks, a serverless tool like **Cloud Run** is much less work.
 
-You can install software on a VM just as you would on a physical Linux
-or Windows server. For example, you can install NGINX, Node.js, .NET,
-Java, or a database.
+#### Creating and Managing a Basic VM
 
-### When would you use a VM?
-
-Use Compute Engine when you need control over the operating system or
-the software installed on the server. Examples include:
-
--   Hosting an application on a Linux or Windows server.
--   Running software that needs operating-system-level access.
--   Running a background worker or scheduled process.
--   Testing server configurations.
--   Hosting software that is not suitable for a fully managed platform.
-
-If you do not need to manage a VM's operating system, a managed service
-such as Cloud Run may require less operational work. Compute Engine is
-not automatically the best choice for every application.
-
-### Create a basic VM
-
-``` bash
+```
+# Create a Debian 12 Linux VM named 'my-vm' in the asia-east1-a zone
 gcloud compute instances create my-vm \
   --zone=asia-east1-a \
   --machine-type=e2-medium \
   --image-family=debian-12 \
   --image-project=debian-cloud
+
 ```
 
-What each part means:
+| Part of the Command | What It Means in Simple Words | 
+| ----- | ----- | 
+| `gcloud compute instances create my-vm` | Tells [Compute Engine](https://cloud.google.com/compute/docs/overview) to build a new VM named `my-vm`. | 
+| `--zone=asia-east1-a` | Places the VM in the `asia-east1-a` data center ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | 
+| `--machine-type=e2-medium` | Chooses the computer size (2 shared vCPUs and 4 GB RAM) ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | 
+| `--image-family=debian-12` | Installs the latest Debian 12 Linux operating system ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | 
+| `--image-project=debian-cloud` | Tells Google to grab the official Debian image maintained by Google ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | 
 
-  -----------------------------------------------------------------------
-  Part                                Simple explanation
-  ----------------------------------- -----------------------------------
-  `gcloud compute instances create`   Ask Google Cloud to create a VM.
-
-  `my-vm`                             The name you give the VM.
-
-  `--zone=asia-east1-a`               The zone where the VM will run.
-
-  `--machine-type=e2-medium`          The amount/type of virtual CPU and
-                                      memory allocated to it.
-
-  `--image-family=debian-12`          Select a Debian 12 operating-system
-                                      image family.
-
-  `--image-project=debian-cloud`      Select the project that publishes
-                                      the official Debian images.
-  -----------------------------------------------------------------------
-
-Useful commands:
-
-``` bash
-# List VMs in the selected project and zone context
+```
+# List all VMs in your project
 gcloud compute instances list
 
-# Display details about one VM
+# See full details (IP addresses, disks, status) for one VM
 gcloud compute instances describe my-vm --zone=asia-east1-a
 
-# Stop a VM
+# Stop (shut down) a VM
 gcloud compute instances stop my-vm --zone=asia-east1-a
 
-# Start a stopped VM
+# Start a stopped VM back up
 gcloud compute instances start my-vm --zone=asia-east1-a
 
-# Delete a VM
+# Permanently delete a VM
 gcloud compute instances delete my-vm --zone=asia-east1-a
+
 ```
 
-Stopping a VM is different from deleting it. A stopped VM can be started
-again. Its attached persistent disks generally remain, although some
-resources and storage can still incur charges. Deleting a VM removes the
-VM resource; check the disk deletion settings before assuming its disks
-will also be deleted.
+> **Good to Know (Stopping vs. Deleting):** When you **stop** a VM, you stop paying for its CPU and RAM, and you can start it again later—but you **still pay** a small storage charge for its attached hard disk. When you **delete** a VM, the VM is gone for good.
 
-## 8.2 Cloud Shell, a VM terminal, and SSH
+### 5.2 Terminal vs. SSH vs. Cloud Shell (What Is the Difference?)
 
-These three terms are related, but they do not mean the same thing.
+One of the easiest mistakes in a lab is typing a command into the wrong window. Let's make these three terms crystal clear:
 
-### What is a terminal?
+* **What is a Terminal?** A text window where you type commands (like `ls` to list files, `pwd` to see what folder you are in, or `whoami` to see your username) instead of clicking with a mouse.
 
-A terminal is a text-based window where you type commands and read the
-output. It is a way to interact with a computer using commands instead
-of clicking through a graphical interface.
+* **What is SSH (Secure Shell)?** [SSH](https://cloud.google.com/compute/docs/connect/standard-ssh) is a secure tunnel that connects your terminal to **another computer** far away. Once you connect to a VM with SSH, every command you type runs **inside that VM**, not on your laptop.
 
-For example:
+* **What is Cloud Shell?** Cloud Shell is a free mini-computer Google gives you inside your web browser with `gcloud` already installed ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). You use Cloud Shell as your "control room" to manage Google Cloud, and then use `gcloud compute ssh` from Cloud Shell to step inside your VM.
 
-``` bash
-pwd
-ls
-whoami
+| Question | Cloud Shell | VM SSH Terminal | 
+| ----- | ----- | ----- | 
+| **What computer am I typing on?** | Google's temporary admin box (comes with 5 GB of personal storage) ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | Your actual [Compute Engine](https://cloud.google.com/compute/docs/overview) VM (`my-vm` or `gcelab`). | 
+| **What should I run here?** | `gcloud` commands to create VMs, disks, buckets, and firewall rules ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | Linux commands (`sudo apt-get install nginx`, `lsblk`, `systemctl`) to set up the server inside the VM ([Connect to Linux VMs using SSH](https://cloud.google.com/compute/docs/connect/standard-ssh)). | 
+| **What happens if I install NGINX here?** | It installs inside Cloud Shell by mistake (your VM won't have NGINX). | It installs NGINX on your VM where your web server actually runs. | 
+| **How do I switch between them?** | Type `gcloud compute ssh VM_NAME` to jump into the VM. | Type `exit` to leave the VM and return to Cloud Shell. | 
+
+#### Everyday Workflow: Jumping from Cloud Shell into a VM
+
 ```
+# 1. Start in Cloud Shell: Open an SSH connection to your VM
+gcloud compute ssh gcelab2 --zone=asia-east1-a
 
--   `pwd` shows the current directory.
--   `ls` lists files and folders.
--   `whoami` shows the current Linux user.
-
-### What is SSH?
-
-**SSH means Secure Shell.** It is a secure network protocol that lets
-you log in to another computer and run commands on it.
-
-Think of it this way:
-
--   Your laptop is one computer.
--   A Linux VM in Google Cloud is another computer.
--   SSH creates a secure connection from your laptop or Cloud Shell to
-    that VM.
--   Once connected, the commands you type run on the VM, not on your
-    laptop.
-
-SSH is commonly used by developers and system administrators to:
-
--   Install software on a server.
--   Check whether an application is running.
--   Read application logs.
--   Edit configuration files.
--   Restart services.
--   Inspect files and disk space.
--   Troubleshoot a server without physically accessing it.
-
-For example, when you run `sudo apt-get install nginx` inside an SSH
-session connected to a VM, NGINX is installed on that VM.
-
-### What is Cloud Shell?
-
-Cloud Shell is a browser-based command-line environment provided by
-Google Cloud. It runs in a Google-managed environment and includes tools
-such as the Google Cloud CLI (`gcloud`) and Git. The lab notes describe
-a persistent 5-GB home directory.
-
-You can use Cloud Shell to manage Google Cloud resources without
-installing the Google Cloud CLI on your own computer.
-
-For example, run this in Cloud Shell:
-
-``` bash
-gcloud compute instances list
-```
-
-This command asks the Google Cloud APIs to list VM instances. It does
-not log in to any VM.
-
-### What is the SSH terminal opened from the VM page?
-
-When you click **SSH** beside a VM in the Google Cloud Console, Google
-opens a browser-based terminal connected to that specific VM.
-
-Commands entered in that window run inside the VM.
-
-For example:
-
-``` bash
+# 2. Now you are INSIDE the VM: Download the latest package list and install NGINX
 sudo apt-get update
 sudo apt-get install -y nginx
-```
 
-These commands update the package information and install NGINX on the
-VM.
-
-### Cloud Shell vs. SSH terminal connected to a VM
-
-  -----------------------------------------------------------------------
-  Feature                 Cloud Shell             VM SSH terminal
-  ----------------------- ----------------------- -----------------------
-  What is it?             A Google-managed        A terminal session
-                          command-line            connected to a
-                          environment.            particular VM.
-
-  Where do commands run?  In the Cloud Shell      Inside the target VM.
-                          environment.            
-
-  Main purpose            Manage Google Cloud     Administer and
-                          resources using tools   troubleshoot the VM.
-                          such as `gcloud`.       
-
-  `gcloud` available?     Yes, it is              Not necessarily; it can
-                          preinstalled.           be installed if needed.
-
-  Installs NGINX where?   In Cloud Shell, if you  On the connected VM.
-                          run the install there.  
-
-  Can it connect to a VM? Yes, using              It is already connected
-                          `gcloud compute ssh`.   to that VM.
-  -----------------------------------------------------------------------
-
-A useful daily workflow is:
-
-1.  Open Cloud Shell.
-2.  Use `gcloud` to create or inspect a VM.
-3.  Use `gcloud compute ssh` to connect to the VM.
-4.  Run Linux commands inside the VM.
-5.  Type `exit` to leave the VM session and return to Cloud Shell.
-
-### Connect to a VM using SSH
-
-From Cloud Shell:
-
-``` bash
-gcloud compute ssh gcelab2 \
-  --zone=asia-east1-a
-```
-
-Explanation:
-
--   `gcloud compute ssh` asks Google Cloud to establish an SSH
-    connection.
--   `gcelab2` is the VM name.
--   `--zone` identifies where that VM is located.
-
-If the active project and default zone are configured in `gcloud`, you
-may be able to omit those flags.
-
-To leave the remote VM terminal:
-
-``` bash
-exit
-```
-
-You return to the shell from which you started the SSH connection.
-
-### Why do we need SSH when attaching a disk?
-
-Attaching a disk in Google Cloud connects the disk resource to the VM.
-It does not automatically prepare the disk for storing files inside
-Linux.
-
-After attaching it, you normally need to work inside the VM to:
-
-1.  Find the new disk device.
-2.  Create a filesystem on it.
-3.  Create a directory to use as its mount point.
-4.  Mount the filesystem to that directory.
-5.  Optionally configure automatic mounting after a restart.
-
-Those are operating-system tasks, so you use SSH to run the Linux
-commands inside the VM.
-
-You do **not** need SSH merely to issue the Google Cloud command that
-attaches the disk. That attachment command can be run from Cloud Shell.
-
-## 8.3 SSH keys and password prompts
-
-### What is an SSH key?
-
-An SSH key is a digital credential used to prove that you are allowed to
-connect to a server.
-
-SSH normally uses a pair of mathematically related keys:
-
-  -----------------------------------------------------------------------
-  Key                     Meaning                 Where it should be kept
-  ----------------------- ----------------------- -----------------------
-  Private key             The secret part used by Keep it private on your
-                          your SSH client to      computer or approved
-                          prove your identity.    key store.
-
-  Public key              The part that can be    Can be shared with the
-                          given to the server or  system that manages
-                          an identity service.    access.
-  -----------------------------------------------------------------------
-
-A simple analogy:
-
--   The public key is like a lock that can be placed on the server.
--   The private key is the secret key that proves you are allowed to
-    open that lock.
-
-The public and private keys are related. A server can verify proof made
-with the private key using the corresponding public key.
-
-**Never share your private key.** Do not upload it to a source-code
-repository, send it in email, or place it in a public Cloud Storage
-bucket.
-
-### Does Google Cloud create SSH keys automatically?
-
-When you connect using the Google Cloud Console or `gcloud compute ssh`,
-Compute Engine can create and manage SSH keys for you. The exact process
-depends on whether the VM uses metadata-based SSH keys or OS Login.
-
-For many beginner labs, you do not need to manually create a key before
-using the Console's SSH button or `gcloud compute ssh`.
-
-### Why is SSH asking for a password?
-
-There are several different prompts that can look like password
-requests:
-
-1.  **SSH key passphrase:** Your computer may ask for a passphrase to
-    unlock your encrypted private key. This protects the key file. It is
-    not necessarily the VM's Linux password.
-2.  **Google account sign-in or authorization:** The browser or `gcloud`
-    may ask you to authenticate to Google Cloud.
-3.  **Remote Linux password:** A terminal may display
-    `username@host's password:`. This is asking for the remote Linux
-    account password. Many Compute Engine Linux images do not have a
-    password configured by default and use key-based SSH authentication
-    instead.
-4.  **`sudo` password:** Some Linux environments ask for a password when
-    a user runs a privileged command. This is separate from SSH
-    authentication.
-
-Do not assume that every password prompt is asking for your Google
-account password. Read the prompt carefully. Do not repeatedly guess
-passwords.
-
-### OS Login
-
-OS Login is a Google Cloud feature that connects VM login access to
-Google identities and IAM permissions. It can make access management
-easier, especially when multiple developers need access.
-
-Two useful roles are:
-
--   `roles/compute.osLogin`: permits login without `sudo` access.
--   `roles/compute.osAdminLogin`: permits login with `sudo` access.
-
-OS Login is for Linux VMs. When it is enabled, metadata-based SSH keys
-are not used for normal OS Login access.
-
-### SSH in daily development
-
-A typical workflow might look like this:
-
-``` bash
-# Connect to the VM
-gcloud compute ssh my-vm --zone=asia-east1-a
-
-# Check the current user
-whoami
-
-# Check whether NGINX is running
+# 3. Still INSIDE the VM: Check if NGINX is running and test the local web page
 sudo systemctl status nginx
-
-# View recent system logs for NGINX
-sudo journalctl -u nginx -n 50
-
-# Leave the VM
-exit
-```
-
-Use SSH for administration and troubleshooting. For repeatable
-application deployments, prefer automated deployment methods such as
-startup scripts, instance templates, managed instance groups, or a CI/CD
-pipeline rather than manually changing every VM.
-
-## 8.4 Linux commands used in the lab
-
-The lab uses Debian Linux. These commands run inside the VM's SSH
-terminal unless stated otherwise.
-
-### Update package information
-
-``` bash
-sudo apt-get update
-```
-
--   `sudo` runs the command with administrator privileges.
--   `apt-get` is Debian's package-management command.
--   `update` downloads the latest package lists.
--   It does not upgrade every installed package by itself.
-
-### Install NGINX
-
-``` bash
-sudo apt-get install -y nginx
-```
-
--   `install nginx` asks Debian to install the NGINX web server.
--   `-y` automatically answers yes to confirmation prompts.
--   NGINX can serve web pages and act as a reverse proxy.
-
-### Check whether NGINX is running
-
-The lab uses:
-
-``` bash
-ps auwx | grep nginx
-```
-
-This searches the process list for processes whose command contains
-`nginx`. The `grep` process itself can also appear in the output.
-
-A more direct service check is:
-
-``` bash
-sudo systemctl status nginx
-```
-
-To test whether a local web server responds:
-
-``` bash
 curl http://localhost
+
+# 4. Leave the VM and return to Cloud Shell
+exit
+
 ```
 
-`localhost` means the same VM. This test does not prove that the
-application is reachable from the public internet; firewall rules and
-external networking must also be configured.
+### 5.3 SSH Keys, Password Prompts, and OS Login
 
-## 8.5 Regions, zones, and resource locations
+#### How Do SSH Keys Work?
 
-A **region** is a geographical area where Google Cloud has data centers.
-A region contains one or more **zones**.
+Instead of typing a regular password, [SSH](https://cloud.google.com/compute/docs/instances/ssh) uses a matching pair of digital files called a **Key Pair**:
 
-Example from the lab:
+| Key File | Simple Analogy | Where It Lives & Rule | 
+| ----- | ----- | ----- | 
+| **Public Key** | Like a **padlock** you bolt onto the VM's door ([About SSH connections and SSH keys](https://cloud.google.com/compute/docs/instances/ssh)). | Stored on the VM. Anyone can see the padlock; it is safe to share. | 
+| **Private Key** | Like the **secret physical key** in your pocket that opens that padlock ([About SSH connections and SSH keys](https://cloud.google.com/compute/docs/instances/ssh)). | Stored privately on your computer or Cloud Shell. **Never share it with anyone.** | 
 
--   Region: `asia-east1`
--   Zone: `asia-east1-a`
+When you click the **SSH** button in the console or run `gcloud compute ssh`, Google Cloud automatically creates this key pair for you and puts the public key onto the VM behind the scenes.
 
-A zone is a deployment location inside a region. A VM instance is a
-zonal resource: it is created in a particular zone.
+#### Why Is SSH Asking Me for a Password?
 
-The location of a resource matters because some resources must be in
-compatible locations to work together.
+If you see a password prompt, read the exact words before typing:
 
-Examples:
+1. **`Enter passphrase for key ...`**: `gcloud` is asking if you want an extra password to lock your Private Key file in Cloud Shell. In training labs, you can simply press `Enter` (leave it blank).
 
--   A zonal VM and a zonal Persistent Disk that you want to attach to it
-    must be in the same zone.
--   A regional static external IP address must be in the same region as
-    the VM that uses it.
--   A global load balancer has a different scope from a zonal VM.
+2. **`username@host's password:`**: The VM is asking for a Linux user password. Because Google Cloud Linux VMs do not use passwords by default, seeing this usually means your SSH key or IAM permission isn't set up properly—do not try guessing your Gmail password here!
 
-### Set the default region and zone
+3. **`[sudo] password for username:`**: Linux inside the VM is asking to confirm administrator rights when running `sudo`.
 
-``` bash
+#### What Is OS Login?
+
+When a team of 50 developers works on VMs, managing SSH key files by hand gets messy. [OS Login](https://cloud.google.com/compute/docs/oslogin) links Linux SSH login directly to a person's Google Cloud IAM roles:
+
+* **`roles/compute.osLogin`**: Lets the user log into the VM as a normal user ([OS Login](https://cloud.google.com/compute/docs/oslogin)).
+
+* **`roles/compute.osAdminLogin`**: Lets the user log into the VM and run `sudo` admin commands ([OS Login](https://cloud.google.com/compute/docs/oslogin)).
+
+### 5.4 Regions, Zones, and Shell Variables
+
+* **Region**: A geographic area where Google has data centers, such as `asia-east1` (Taiwan) or `us-west1` (Oregon) ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)).
+
+* **Zone**: An individual data center building inside a region, such as `asia-east1-a`, `asia-east1-b`, or `asia-east1-c` ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)).
+
+**Why does location matter?** Because certain items must live in the exact same place to plug into each other. For example, a zonal VM in `asia-east1-a` can only attach a zonal [Persistent Disk](https://cloud.google.com/compute/docs/disks/persistent-disks) that is **also** in `asia-east1-a`.
+
+```
+# Check which Google account and project are currently active
+gcloud auth list
+gcloud config get-value project
+
+# Save a default region and zone in your gcloud settings
 gcloud config set compute/region asia-east1
 gcloud config set compute/zone asia-east1-a
-```
 
-These commands set default properties for the Google Cloud CLI. They do
-not move existing resources and do not change the physical location of a
-project.
-
-### Use shell variables
-
-``` bash
+# Or save them as shell variables ($REGION and $ZONE) for your current terminal window
 export REGION=asia-east1
 export ZONE=asia-east1-a
+
 ```
 
-Now you can reuse the values:
+### 5.5 Adding a Second Hard Drive (Persistent Disk) to a VM
 
-``` bash
-gcloud compute instances create demo-vm \
-  --zone="$ZONE" \
-  --machine-type=e2-medium
+A [Persistent Disk](https://cloud.google.com/compute/docs/disks/persistent-disks) is durable network storage that acts like an external hard drive for your VM. Keeping your application files on a separate data disk (instead of the main boot disk) makes it easy to resize, back up, or move that disk to another VM later.
+
+#### Why Do We Need SSH When Attaching a Disk?
+
+Think of what happens when you buy a brand-new blank USB hard drive for your laptop:
+
+1. **Physical step (Cloud Shell)**: You plug the cable into the computer (`gcloud compute instances attach-disk`).
+
+2. **Operating System step (Inside VM via SSH)**: Even though the drive is plugged in, Linux cannot save files on a raw, blank disk yet. You have to log into the VM via [SSH](https://cloud.google.com/compute/docs/connect/standard-ssh) to **format** the drive (`mkfs.ext4`), create a **folder** for it (`mkdir /mnt/mydisk`), and **connect (mount)** the drive to that folder (`mount`).
+
+#### Step-by-Step Commands to Create, Attach, Format, and Mount a Disk
+
+**Part A — Run these commands in Cloud Shell (outside the VM):**
+
 ```
-
-`export` creates an environment variable for the current shell and its
-child processes. If you open a new shell session, you may need to define
-it again.
-
-This is different from `gcloud config set`, which stores a CLI
-configuration property. In training labs, the project or shell
-environment may be reset between sessions, so check the active
-configuration rather than assuming it is unchanged.
-
-### Check the active account and project
-
-``` bash
-# Show authenticated accounts
-gcloud auth list
-
-# Show the active project configuration
-gcloud config list project
-
-# Show the active project ID only
-gcloud config get-value project
-```
-
-Before running commands in a lab, confirm that the active account and
-project are the ones you intend to use.
-
-## 8.6 Create and attach a Persistent Disk
-
-### What is a Persistent Disk?
-
-A Persistent Disk is durable block storage that a VM can use like a disk
-attached to a computer.
-
-It is useful when you want data to remain available independently of the
-VM's running state. For example, an application can store uploaded files
-or application data on a separate data disk.
-
-A Persistent Disk is network-attached storage. It is not the same as a
-physical disk directly installed inside the server hosting the VM.
-
-### Why create a separate disk?
-
-A separate data disk can make it easier to manage application data
-independently from the operating system.
-
-For example:
-
--   The boot disk contains Debian and installed software.
--   A separate data disk stores application files.
--   You can manage, snapshot, or attach the data disk separately,
-    subject to disk and VM compatibility rules.
-
-### Step 1: Create a VM
-
-The lab creates a Debian VM:
-
-``` bash
+# Step 1: Create a Debian VM named 'gcelab'
 gcloud compute instances create gcelab \
   --zone="$ZONE" \
   --machine-type=e2-standard-2 \
   --image-family=debian-12 \
   --image-project=debian-cloud
-```
 
-This creates a VM named `gcelab` in the selected zone.
-
-### Step 2: Create a Persistent Disk
-
-``` bash
+# Step 2: Create a blank 200 GB Persistent Disk in the exact same zone
 gcloud compute disks create mydisk \
   --size=200GB \
   --zone="$ZONE"
-```
 
-Explanation:
-
--   `disks create` creates a disk resource.
--   `mydisk` is the disk name.
--   `--size=200GB` requests a 200-GB disk.
--   `--zone` places the disk in a specific zone.
-
-The disk is created, but it is not yet attached to the VM.
-
-### Step 3: Attach the disk to the VM
-
-``` bash
+# Step 3: Plug (attach) the disk into the VM
 gcloud compute instances attach-disk gcelab \
   --disk=mydisk \
   --zone="$ZONE"
-```
 
-This connects the disk resource to the VM. Linux should then be able to
-detect it as a block device.
-
-### Step 4: Connect to the VM
-
-``` bash
+# Step 4: SSH into the VM so we can format and mount the disk inside Linux
 gcloud compute ssh gcelab --zone="$ZONE"
+
 ```
 
-You need this connection because the next steps prepare the disk inside
-Linux.
+**Part B — Run these commands inside the VM's SSH terminal:**
 
-### Step 5: Find the new disk
-
-``` bash
+```
+# Step 5: Find the exact name of the newly attached disk
 ls -l /dev/disk/by-id/
-```
-
-You can also inspect disks and filesystems with:
-
-``` bash
 lsblk -f
-```
 
--   `/dev` contains device files representing hardware and virtual
-    devices.
--   `/dev/disk/by-id/` provides device names based on disk identity.
--   `lsblk` lists block devices.
--   `-f` shows filesystem information where available.
-
-Check the output carefully and identify the new data disk. Do not guess
-the device name: selecting the wrong device can destroy data.
-
-### Step 6: Create a mount-point directory
-
-``` bash
+# Step 6: Create an empty folder (/mnt/mydisk) where the disk's files will show up
 sudo mkdir -p /mnt/mydisk
-```
 
-A **mount point** is a directory where Linux makes the contents of a
-filesystem accessible.
+# Step 7: Format the blank disk with the ext4 Linux filesystem
+# WARNING: Formatting wipes a disk clean! Double-check the device ID from Step 5 first.
+sudo mkfs.ext4 -F /dev/disk/by-id/scsi-0Google_PersistentDisk_persistent-disk-1
 
-After mounting the disk at `/mnt/mydisk`, you can work with its files
-through that directory.
-
-### Step 7: Format the disk
-
-The lab uses `mkfs.ext4`:
-
-``` bash
-sudo mkfs.ext4 -F \
-  /dev/disk/by-id/DEVICE_ID
-```
-
-Replace `DEVICE_ID` with the actual device identifier found on your VM.
-
-Explanation:
-
--   `mkfs` means make filesystem.
--   `ext4` is a common Linux filesystem format.
--   `-F` forces the operation.
-
-**Warning: Formatting creates a filesystem and destroys existing data on
-the selected device.** Only format a new or intentionally disposable
-disk. Verify the device name before running this command.
-
-### Step 8: Mount the disk
-
-``` bash
-sudo mount -o defaults \
-  /dev/disk/by-id/DEVICE_ID \
-  /mnt/mydisk
-```
-
-This makes the disk's filesystem available at `/mnt/mydisk`.
-
-The lab also uses the `discard` mount option:
-
-``` bash
+# Step 8: Mount (connect) the formatted disk to the /mnt/mydisk folder
 sudo mount -o discard,defaults \
-  /dev/disk/by-id/DEVICE_ID \
+  /dev/disk/by-id/scsi-0Google_PersistentDisk_persistent-disk-1 \
   /mnt/mydisk
-```
 
-`discard` enables discard/TRIM requests where supported. It is not
-required for every disk or workload.
-
-Verify the mount:
-
-``` bash
+# Check that the 200 GB disk now appears in your mounted drives list
 df -h
-lsblk -f
+
 ```
 
-`df -h` displays mounted filesystem capacity in a human-readable format.
+**Part C — Make the disk reconnect automatically when the VM restarts (`/etc/fstab`):**
 
-### Step 9: Make the mount persistent across VM restarts
+If you restart the VM right now, Linux will forget that `/mnt/mydisk` was mounted. To make Linux reconnect it automatically on every boot, add its unique ID (`UUID`) to `/etc/fstab` ([Add a Persistent Disk to a VM](https://cloud.google.com/compute/docs/disks/add-persistent-disk)):
 
-A manual `mount` command does not automatically create a permanent mount
-configuration. Linux uses `/etc/fstab` to define filesystems that should
-be mounted during startup.
-
-Find the filesystem UUID:
-
-``` bash
+```
+# Step 9: Find the unique UUID of your new filesystem
 sudo blkid
-```
 
-Open the file:
-
-``` bash
+# Step 10: Open /etc/fstab in the nano text editor
 sudo nano /etc/fstab
-```
 
-Add an entry using the correct UUID and mount point. Example:
+# Add a single line at the bottom of /etc/fstab (replace with your real UUID):
+# UUID=YOUR-FILESYSTEM-UUID /mnt/mydisk ext4 discard,defaults,nofail 0 2
+# ('nofail' tells Linux to still boot normally even if the disk is ever unplugged)
 
-``` text
-UUID=YOUR-FILESYSTEM-UUID /mnt/mydisk ext4 defaults,nofail 0 2
-```
-
-What the fields mean:
-
-1.  `UUID=...`: identifies the filesystem.
-2.  `/mnt/mydisk`: directory where it should be mounted.
-3.  `ext4`: filesystem type.
-4.  `defaults,nofail`: standard mount options; `nofail` lets the VM
-    continue booting if the disk is unavailable.
-5.  `0`: do not use the legacy dump backup utility.
-6.  `2`: filesystem check order for this non-root filesystem.
-
-Test the entry before rebooting:
-
-``` bash
+# Step 11: Test your /etc/fstab file safely right now before rebooting
 sudo umount /mnt/mydisk
 sudo mount -a
 df -h
+
 ```
 
-If `mount -a` reports an error, fix `/etc/fstab` before restarting. A
-bad mount entry can cause boot problems.
+### 5.6 Persistent Disk vs. Local SSD
 
-### Why does the lab use SSH for disk setup?
+| Feature | Persistent Disk (Durable Storage) | Local SSD (Super-Fast Scratch Space) | 
+| ----- | ----- | ----- | 
+| **Where is it physically located?** | Connected over Google's fast internal network ([Persistent Disk](https://cloud.google.com/compute/docs/disks/persistent-disks)). | Physically wired inside the exact host computer running your VM ([Local SSD](https://cloud.google.com/compute/docs/disks/local-ssd)). | 
+| **Is my data safe if the VM stops?** | **Yes.** Your data stays safe even if you stop or delete the VM ([Persistent Disk](https://cloud.google.com/compute/docs/disks/persistent-disks)). | **No.** While data survives a simple OS reboot, stopping the VM or a hardware crash can **wipe the disk completely** ([Local SSD](https://cloud.google.com/compute/docs/disks/local-ssd)). | 
+| **What should I store on it?** | Operating systems, databases, and important application files ([Persistent Disk](https://cloud.google.com/compute/docs/disks/persistent-disks)). | Temporary caches or scratch files that you can easily recreate if lost ([Local SSD](https://cloud.google.com/compute/docs/disks/local-ssd)). | 
 
-The Google Cloud command attaches the disk to the VM at the
-infrastructure level. Linux still needs to recognize, format, and mount
-the device. SSH provides access to the VM so you can perform those
-operating-system steps.
+### 5.7 Storing Code in a Cloud Storage Bucket
 
-## 8.7 Persistent Disk vs. Local SSD
+> **Note on Zones:** From this point forward, the lab switches from `asia-east1-a` to `us-west1-b` to build the multi-VM online store (`fancy-fe` and `fancy-be`).
 
-The lab introduces Local SSD as another storage option.
+#### What Is a Cloud Storage Bucket?
 
-### Persistent Disk
+A [Cloud Storage](https://cloud.google.com/storage/docs) bucket is online file storage (like a cloud folder for your project) accessed over an API. It is **not** a hard drive attached to a single VM.
 
--   Durable network block storage.
--   Designed to keep data beyond the VM's normal stop/start lifecycle.
--   Can be managed separately from the VM.
--   Useful for application data that must be retained.
+#### Why Do We Copy Code and Startup Scripts to a Bucket?
 
-### Local SSD
+Soon, we will create a group of VMs that automatically adds new VMs when traffic spikes. You don't want to log into every new VM by hand to copy your website code! Instead:
 
--   High-performance temporary block storage physically attached to the
-    host machine running the VM.
--   Offers very low latency and high I/O performance.
--   Intended for temporary or reconstructable data such as caches,
-    scratch data, or temporary processing files.
--   Data can be lost in failure or lifecycle scenarios; do not treat it
-    as the only copy of important data.
+1. You upload your website code and a setup script (`startup-script.sh`) into **one central bucket**.
 
-  -----------------------------------------------------------------------
-  Feature                 Persistent Disk         Local SSD
-  ----------------------- ----------------------- -----------------------
-  Main purpose            Durable storage         Very fast temporary
-                                                  storage
+2. Every time a new VM turns on, it automatically grabs the script and code from that bucket and starts the app by itself.
 
-  Attachment              Network-attached block  Physically attached to
-                          storage                 the host
+#### Why Delete `node_modules` Before Uploading?
 
-  Data durability         Designed for durable    Not a durable data
-                          storage                 store
+In Node.js apps, the `node_modules` folder contains thousands of tiny library files downloaded for the computer where they were first installed. Deleting `node_modules` before uploading makes the upload much faster and lets each VM install fresh, clean packages that match its own Linux system.
 
-  Typical use             Application data, boot  Cache, scratch data,
-                          disks, retained files   temporary processing
-
-  Main trade-off          Network storage         High performance with
-                          characteristics         data-loss risk
-  -----------------------------------------------------------------------
-
-**Important correction:** Local SSD data is not guaranteed to disappear
-on every VM reboot. However, it can be lost in certain stop,
-termination, host-failure, or other lifecycle scenarios. Its exact
-persistence behavior depends on the VM configuration and event. Always
-keep important data on durable storage and consult the current Local SSD
-documentation before relying on a specific persistence behavior.
-
-## 8.8 Cloud Storage buckets and why the lab copies code there
-
-### What is Cloud Storage?
-
-Cloud Storage is an object storage service. It stores objects (files)
-inside buckets.
-
-A bucket is a container for objects. For example, a bucket can hold:
-
--   Application build files.
--   Startup scripts.
--   Images and documents.
--   Logs or exported files.
--   Deployment artifacts.
-
-A Cloud Storage bucket is not the same as a VM disk. You access objects
-through Cloud Storage APIs and tools rather than mounting the bucket as
-a normal local disk by default.
-
-### Why copy application files to a bucket?
-
-In the lab, the frontend and backend VMs need to obtain the application
-code and startup script.
-
-Instead of manually copying files separately to every VM:
-
-1.  Store the application files in one bucket.
-2.  Store the startup script in the bucket.
-3.  Configure each VM to retrieve the required files when it starts.
-4.  When a new VM is created by a MIG, it can use the same deployment
-    process.
-
-This helps because:
-
--   Multiple VMs can retrieve the same deployment artifact.
--   The code is stored independently of an individual VM.
--   Recreated instances can be configured automatically.
--   You avoid manually uploading the same files to each VM.
-
-A bucket does not automatically make a deployment secure or repeatable.
-Give VMs only the permissions they need, control who can change the
-artifacts, and use versioned or immutable build artifacts for production
-deployments.
-
-### Create a bucket
-
-``` bash
+```
+# 1. Create a bucket (bucket names must be globally unique across all of Google Cloud)
 gcloud storage buckets create gs://YOUR_UNIQUE_BUCKET_NAME
+
+# 2. Delete old local node_modules folders so we only upload clean source code
+# (Be careful with rm -rf: always double-check the folder path before pressing Enter!)
+rm -rf ~/monolith-to-microservices/*/node_modules
+
+# 3. Copy the startup script and the code folder into your bucket
+gcloud storage cp ~/monolith-to-microservices/startup-script.sh \
+  gs://YOUR_UNIQUE_BUCKET_NAME/startup-script.sh
+
+gcloud storage cp -r ~/monolith-to-microservices \
+  gs://YOUR_UNIQUE_BUCKET_NAME/
+
 ```
 
-Bucket names must be globally unique. In real projects, choose the
-location and other bucket settings to match your data residency,
-availability, and cost requirements.
+### 5.8 Startup Scripts & Giving VMs Permission to Read the Bucket
 
-### Copy a file to the bucket
+A [startup script](https://cloud.google.com/compute/docs/instances/startup-scripts) is a bash script that [Compute Engine](https://cloud.google.com/compute/docs/overview) runs automatically every time a VM boots up. It installs software (like NGINX or Node.js), downloads your code from the bucket, and starts your server.
 
-``` bash
-gcloud storage cp startup-script.sh \
-  gs://YOUR_BUCKET_NAME/startup-script.sh
+**Security tip:** Never make your code bucket public to the whole internet just so your VM can read `startup-script.sh`. Instead, create a **Service Account**, give it permission to read that bucket (`roles/storage.objectViewer`), and attach it to your VMs:
+
 ```
+# 1. Create a Service Account for your store VMs
+gcloud iam service-accounts create fancy-vm-sa \
+  --display-name="Fancy Store VM Service Account"
 
-### Copy a directory to the bucket
+# 2. Allow that Service Account to read files from your private bucket
+gcloud storage buckets add-iam-policy-binding gs://YOUR_UNIQUE_BUCKET_NAME \
+  --member="serviceAccount:fancy-vm-sa@PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.objectViewer"
 
-``` bash
-gcloud storage cp -r monolith-to-microservices \
-  gs://YOUR_BUCKET_NAME/
-```
-
--   `cp` copies files.
--   `-r` copies a directory and its contents recursively.
--   `gs://` identifies a Cloud Storage location.
-
-### Why remove `node_modules` before copying?
-
-The lab removes Node.js dependency folders before uploading:
-
-``` bash
-rm -rf monolith-to-microservices/*/node_modules
-```
-
-`node_modules` can contain many files and can be large. The lab wants to
-avoid uploading those existing local dependencies. The startup process
-installs dependencies on the VM.
-
-**Warning:** `rm -rf` deletes files without asking for confirmation.
-Check the directory and pattern carefully before running it. Never run a
-destructive command with an uncertain path.
-
-## 8.9 Startup scripts
-
-### What is a startup script?
-
-A startup script is a file containing commands that Compute Engine runs
-when a VM boots.
-
-It can automate initial VM configuration, for example:
-
--   Install NGINX or Node.js.
--   Download application files.
--   Install application dependencies.
--   Create configuration files.
--   Start application processes.
-
-Without a startup script, an administrator might need to connect to
-every new VM and repeat these steps manually.
-
-### Why use a startup script with a MIG?
-
-A MIG can create replacement VMs whenever it needs to maintain the
-desired number of instances. If each VM needs the same software and
-configuration, a startup script can configure each new VM in the same
-way.
-
-The intended sequence is:
-
-1.  A VM starts.
-2.  The guest environment reads the startup-script metadata.
-3.  The startup script runs.
-4.  The script downloads the application artifacts.
-5.  The script installs dependencies and configures the application.
-6.  The application starts.
-
-The guest environment on the VM is responsible for running
-metadata-based startup scripts. Public Compute Engine images normally
-include the required guest environment.
-
-### Create a startup-script file
-
-In Cloud Shell:
-
-``` bash
-mkdir -p ~/monolith-to-microservices
-touch ~/monolith-to-microservices/startup-script.sh
-```
-
-Open the Cloud Shell Editor and add the commands needed to prepare and
-start the application.
-
-A simplified illustrative script might look like this:
-
-``` bash
-#!/bin/bash
-set -e
-
-apt-get update
-apt-get install -y nginx
-
-# Add application download, dependency installation,
-# configuration, and service-start commands here.
-```
-
-This is only a small example. A real application startup script must
-include the correct download location, runtime installation, dependency
-installation, configuration, and process management steps.
-
-### Upload the startup script
-
-``` bash
-gcloud storage cp \
-  ~/monolith-to-microservices/startup-script.sh \
-  gs://YOUR_BUCKET_NAME/startup-script.sh
-```
-
-### Create a VM that uses the startup script
-
-The lab uses metadata:
-
-``` bash
+# 3. Create the 'backend' VM with the Service Account, 'backend' tag, and startup script
 gcloud compute instances create backend \
   --zone=us-west1-b \
   --machine-type=e2-standard-2 \
+  --service-account=fancy-vm-sa@PROJECT_ID.iam.gserviceaccount.com \
+  --scopes=https://www.googleapis.com/auth/cloud-platform \
   --tags=backend \
   --image-family=debian-12 \
   --image-project=debian-cloud \
-  --metadata=startup-script-url=https://storage.googleapis.com/YOUR_BUCKET_NAME/startup-script.sh
+  --metadata=startup-script-url=gs://YOUR_UNIQUE_BUCKET_NAME/startup-script.sh
+
+# 4. Create the 'frontend' VM with the Service Account, 'frontend' tag, and startup script
+gcloud compute instances create frontend \
+  --zone=us-west1-b \
+  --machine-type=e2-standard-2 \
+  --service-account=fancy-vm-sa@PROJECT_ID.iam.gserviceaccount.com \
+  --scopes=https://www.googleapis.com/auth/cloud-platform \
+  --tags=frontend \
+  --image-family=debian-12 \
+  --image-project=debian-cloud \
+  --metadata=startup-script-url=gs://YOUR_UNIQUE_BUCKET_NAME/startup-script.sh
+
 ```
 
-Important parts:
+**Good habits for startup scripts:**
 
--   `--tags=backend` adds a network tag to the VM. Firewall rules can
-    target VMs with this tag.
--   `--metadata=startup-script-url=...` tells the VM where to find the
-    startup script.
--   The startup script runs when the VM boots; it is not simply a
-    command that runs in Cloud Shell.
+* Write the script so that if the VM reboots and runs the script a second time, it won't crash or duplicate files (this is called making the script **idempotent**).
 
-### Important permissions
+* Never hardcode database passwords or secret API keys in plain text inside a startup script—use **Secret Manager** instead.
 
-If a startup script is stored in a private Cloud Storage bucket, the VM
-must be able to read it. Assign an appropriate service account to the VM
-and grant it the Storage Object Viewer role on the bucket (or a narrower
-equivalent permission where appropriate).
+### 5.9 Network Tags and Firewall Rules
 
-Do not make a bucket public just to make a startup script work.
+Even after your startup script starts your web app on port `8080`, nobody from the outside can reach it until you open that port in the **VPC Firewall**.
 
-### Production best practices for startup scripts
+Instead of writing firewall rules for individual IP addresses, we use **Network Tags** (`--tags=frontend` and `--tags=backend`):
 
--   Make scripts idempotent: running them more than once should not
-    damage the system or create duplicate configuration.
--   Handle errors so a failed installation does not silently look
-    successful.
--   Pin application and dependency versions.
--   Do not put passwords, API keys, or other secrets directly in the
-    script or plain metadata.
--   Use Secret Manager or another approved secret-management approach.
--   Log script progress and check startup-script logs when
-    troubleshooting.
--   Prefer immutable, versioned application artifacts instead of
-    downloading an unspecified "latest" build.
+1. A **network tag** is just a sticky label on a VM (`frontend` or `backend`). By itself, a tag does nothing.
 
-## 8.10 Network tags and firewall rules
+2. A **firewall rule** says: *"Allow traffic on port 8080 to any VM wearing the `frontend` sticky label."*
 
-### What is a network tag?
-
-A network tag is a label attached to a VM. Firewall rules can use target
-tags to select which VMs a rule applies to.
-
-For example:
-
--   Frontend VMs receive the `frontend` tag.
--   Backend VMs receive the `backend` tag.
-
-A tag does not itself open a port. A matching firewall rule is needed.
-
-### Create a firewall rule for the frontend
-
-The lab allows TCP port 8080 to VMs tagged `frontend`:
-
-``` bash
+```
+# Open port 8080 for any VM tagged 'frontend'
 gcloud compute firewall-rules create fw-fe \
   --allow=tcp:8080 \
   --target-tags=frontend
-```
 
-This creates an ingress firewall rule allowing traffic to TCP port 8080
-on VMs with the `frontend` tag, subject to the rule's network and source
-settings.
-
-### Create a firewall rule for the backend
-
-``` bash
+# Open ports 8081 (Orders) and 8082 (Products) for any VM tagged 'backend'
 gcloud compute firewall-rules create fw-be \
   --allow=tcp:8081-8082 \
   --target-tags=backend
+
 ```
 
-This allows traffic to TCP ports 8081 and 8082 on VMs tagged `backend`,
-subject to the rule's network and source settings.
+### 5.10 Instance Templates (Saved VM Blueprints)
 
-### Why use different tags and ports?
+Suppose you want 4 identical frontend VMs. Typing `gcloud compute instances create` 4 times by hand is slow and easy to mess up.
 
-The example separates the frontend and backend roles.
+An [Instance Template](https://cloud.google.com/compute/docs/instance-templates) is a **saved blueprint** that records everything about a VM (machine size, Linux image, network tags, Service Account, and startup script URL).
 
--   The frontend application listens on port 8080.
--   The backend services listen on ports 8081 and 8082.
--   Firewall rules can target the appropriate group of VMs.
+* **Important rule — Templates cannot be edited**: Once you create an instance template, it is locked forever ([Instance templates](https://cloud.google.com/compute/docs/instance-templates)). If you want to change the VM size later, you simply create a **new** template (like `fancy-fe-new`) and tell your group of VMs to switch to the new blueprint.
 
-This follows the idea of limiting network access to only the services
-that need it.
-
-**Security note:** The lab commands do not specify `--source-ranges`, so
-the rule's source scope follows the applicable firewall-rule defaults.
-For production, explicitly decide which sources should be allowed. Do
-not expose internal backend ports to the entire internet unless there is
-a clear requirement.
-
-## 8.11 Instance templates
-
-### What is an instance template?
-
-An instance template is a reusable definition of a VM's configuration.
-
-It can describe settings such as:
-
--   Machine type.
--   Boot disk image.
--   Network and subnet.
--   Network tags.
--   Service account.
--   Metadata and startup script.
--   Other VM configuration.
-
-A template is a blueprint. It is not itself a running VM.
-
-### Why do we need an instance template?
-
-Suppose you need four identical frontend VMs. Creating each one manually
-can lead to differences in machine type, operating system, tags, or
-startup configuration.
-
-An instance template records the configuration once. A Managed Instance
-Group can then use it to create matching VM instances.
-
-### Create a template from an existing VM
-
-The lab first stops the frontend and backend VMs, then creates templates
-from them:
-
-``` bash
+```
+# 1. Stop the two prototype VMs before taking their blueprint
 gcloud compute instances stop frontend --zone=us-west1-b
 gcloud compute instances stop backend --zone=us-west1-b
-```
 
-``` bash
+# 2. Create blueprints (Instance Templates) from the stopped VMs
 gcloud compute instance-templates create fancy-fe \
   --source-instance=frontend \
   --source-instance-zone=us-west1-b
@@ -1403,232 +606,94 @@ gcloud compute instance-templates create fancy-fe \
 gcloud compute instance-templates create fancy-be \
   --source-instance=backend \
   --source-instance-zone=us-west1-b
-```
 
-The first command creates a template based on the frontend VM. The
-second creates a template based on the backend VM.
-
-You can also define a template directly with flags rather than deriving
-it from an existing VM. This is often easier to reproduce and review in
-production.
-
-### List templates
-
-``` bash
+# 3. View your saved templates
 gcloud compute instance-templates list
+
 ```
 
-### Important: templates are immutable
+### 5.11 Managed Instance Groups (MIGs) and Named Ports
 
-After an instance template is created, you cannot edit that template in
-place.
+#### What Is a Managed Instance Group (MIG)?
 
-If you need to change its machine type, startup script, image, or other
-settings:
+A [Managed Instance Group (MIG)](https://cloud.google.com/compute/docs/instance-groups) uses your Instance Template blueprint to run a team of identical VMs automatically.
 
-1.  Create a new instance template.
-2.  Tell the MIG to use the new template.
-3.  Roll out the update to existing instances using an appropriate
-    update policy.
+Why use a MIG instead of standalone VMs?
 
-This is why the lab creates `fancy-fe-new` rather than editing
-`fancy-fe`.
+* **Self-healing (Autohealing)**: If one VM crashes, the MIG deletes it and builds a fresh replacement automatically.
 
-## 8.12 Managed Instance Groups (MIGs)
+* **Autoscaling**: When website traffic jumps, the MIG automatically adds more VMs, and removes them when traffic quiets down.
 
-### What is a Managed Instance Group?
+* **Easy updates**: You can roll out a new template across all VMs smoothly without taking your whole site down.
 
-A Managed Instance Group is a group of VM instances that Compute Engine
-manages as one unit.
-
-The instances are created from an instance template. The group can
-maintain a target number of VMs and can support:
-
--   Automatic scaling.
--   Autohealing and repair.
--   Rolling updates.
--   Integration with load balancing.
-
-### Why use a MIG?
-
-Imagine that your application needs two frontend VMs.
-
-If one VM fails, you do not want to manually create a replacement. A MIG
-can detect the failure through its configured repair/autohealing
-mechanism and recreate the VM.
-
-If traffic increases, autoscaling can add instances, within the
-configured limits.
-
-### Create a zonal frontend MIG
-
-``` bash
+```
+# 1. Create the frontend MIG with 2 VMs using the 'fancy-fe' blueprint
 gcloud compute instance-groups managed create fancy-fe-mig \
   --zone=us-west1-b \
   --base-instance-name=fancy-fe \
   --size=2 \
   --template=fancy-fe
-```
 
-Explanation:
-
-  -----------------------------------------------------------------------
-  Option                              Meaning
-  ----------------------------------- -----------------------------------
-  `instance-groups managed create`    Create a Managed Instance Group.
-
-  `fancy-fe-mig`                      Name of the group.
-
-  `--zone=us-west1-b`                 Zone in which this zonal MIG
-                                      operates.
-
-  `--base-instance-name=fancy-fe`     Prefix used for generated VM names.
-
-  `--size=2`                          Start with two VM instances.
-
-  `--template=fancy-fe`               Use the `fancy-fe` instance
-                                      template.
-  -----------------------------------------------------------------------
-
-Create the backend MIG:
-
-``` bash
+# 2. Create the backend MIG with 2 VMs using the 'fancy-be' blueprint
 gcloud compute instance-groups managed create fancy-be-mig \
   --zone=us-west1-b \
   --base-instance-name=fancy-be \
   --size=2 \
   --template=fancy-be
-```
 
-### List MIGs and their instances
-
-``` bash
-# List instance groups
-gcloud compute instance-groups list
-
-# List managed instance groups
-gcloud compute instance-groups managed list
-
-# List VMs in one MIG
+# 3. See the actual VMs running inside the frontend MIG
 gcloud compute instance-groups managed list-instances fancy-fe-mig \
   --zone=us-west1-b
+
 ```
 
-### Zonal vs. regional MIG
+| MIG Setting / Term | Simple Explanation | 
+| ----- | ----- | 
+| `--base-instance-name=fancy-fe` | The starter name for VMs in the group (Google adds random letters like `fancy-fe-9x2k`) ([Managed instance groups](https://cloud.google.com/compute/docs/instance-groups)). | 
+| `--size=2` | Keeps 2 VMs running in the group at all times. | 
+| **Zonal vs. Regional MIG** | A **Zonal MIG** puts all VMs in one zone (`us-west1-b`). A **Regional MIG** spreads VMs across multiple zones in a region so your app stays online even if an entire data center building goes dark ([Managed instance groups](https://cloud.google.com/compute/docs/instance-groups)). | 
 
--   A zonal MIG manages VMs in one zone.
--   A regional MIG can distribute VMs across multiple zones in a region.
+#### What Are Named Ports?
 
-A regional MIG can help reduce the impact of a single-zone failure,
-provided the application and its dependencies are designed for that
-distribution.
+A **Named Port** is simply a nickname for a port number on a MIG ([External Application Load Balancer overview](https://cloud.google.com/load-balancing/docs/https)). Instead of making the Load Balancer memorize raw port numbers, we label the ports on our MIGs:
 
-The supplied lab uses zonal MIGs. Do not confuse a regional MIG with a
-global resource: a regional MIG is still associated with one Google
-Cloud region.
+* On `fancy-fe-mig`: `frontend` means port `8080`.
 
-## 8.13 Named ports
+* On `fancy-be-mig`: `orders` means port `8081`, and `products` means port `8082`.
 
-### What is a named port?
-
-A named port maps a readable name to a port number on an instance group.
-
-For example:
-
--   `frontend:8080`
--   `orders:8081`
--   `products:8082`
-
-A backend service can refer to a named port instead of requiring the
-port number to be repeated in every related configuration.
-
-### Configure named ports
-
-For the backend MIG:
-
-``` bash
-gcloud compute instance-groups set-named-ports fancy-be-mig \
-  --zone=us-west1-b \
-  --named-ports=orders:8081,products:8082
 ```
-
-For the frontend MIG:
-
-``` bash
+# Give port 8080 the nickname 'frontend' on the frontend MIG
 gcloud compute instance-groups set-named-ports fancy-fe-mig \
   --zone=us-west1-b \
   --named-ports=frontend:8080
+
+# Give port 8081 the nickname 'orders' and port 8082 the nickname 'products' on the backend MIG
+gcloud compute instance-groups set-named-ports fancy-be-mig \
+  --zone=us-west1-b \
+  --named-ports=orders:8081,products:8082
+
 ```
 
-The group name must be the actual MIG name. In this example, it is
-`fancy-fe-mig`, not the template name `fancy-fe`.
+### 5.12 Health Checks and Autohealing
 
-## 8.14 Health checks and autohealing
+Sometimes a VM is turned on (`RUNNING`), but the Node.js app inside it has frozen or crashed. A **Health Check** is an automated ping that visits a web path (like `/` or `/api/orders`) every few seconds to check if the app answers with a healthy `200 OK` status.
 
-### What is a health check?
+Google Cloud uses health checks in two different places:
 
-A health check is a test that Google Cloud performs to see whether an
-application or VM is responding.
+| Health Check Type | What Question Does It Ask? | What Happens If the VM Fails the Check? | 
+| ----- | ----- | ----- | 
+| **Load-Balancer Health Check** | *"Should I send live customer traffic to this VM right now?"* ([External Application Load Balancer overview](https://cloud.google.com/load-balancing/docs/https)) | The Load Balancer temporarily stops sending users to that VM until it recovers. It does **not** delete the VM. | 
+| **MIG Autohealing Health Check** | *"Is this VM completely broken and in need of replacement?"* ([Managed instance groups](https://cloud.google.com/compute/docs/instance-groups)) | The MIG deletes the broken VM and builds a brand-new VM from the Instance Template. | 
 
-For an HTTP health check, Google Cloud sends an HTTP request to a
-configured port and, optionally, a path.
-
-For example:
-
--   Port: 8080
--   Path: `/`
--   Expected result: a successful response from the application
-
-A VM can be running while its application is broken. A health check
-helps detect this difference.
-
-### Load-balancing health checks vs. autohealing health checks
-
-These two health-check uses have different purposes.
-
-  -----------------------------------------------------------------------
-  Load-balancing health check         MIG autohealing health check
-  ----------------------------------- -----------------------------------
-  Determines whether a backend should Determines whether a VM should be
-  receive user traffic.               repaired or recreated.
-
-  Helps route traffic away from       Helps restore the group to a
-  unhealthy backends.                 healthy state.
-
-  Should detect traffic-serving       Should be conservative enough to
-  problems quickly, with suitable     avoid replacing a VM because of a
-  thresholds.                         brief or temporary problem.
-  -----------------------------------------------------------------------
-
-An unhealthy load-balancer backend is not automatically deleted. The
-load balancer can stop sending it traffic. A MIG autohealing policy can
-trigger repair when its configured health check reports a failure for
-long enough.
-
-### Create an HTTP health check for the frontend
-
-``` bash
+```
+# 1. Create Autohealing health checks (checks every 30s; 3 failures in a row marks it broken)
 gcloud compute health-checks create http fancy-fe-hc \
   --port=8080 \
   --check-interval=30s \
   --healthy-threshold=1 \
   --timeout=10s \
   --unhealthy-threshold=3
-```
 
-Explanation:
-
--   `--port=8080`: send the health-check request to port 8080.
--   `--check-interval=30s`: run checks at 30-second intervals.
--   `--timeout=10s`: wait up to 10 seconds for a response.
--   `--healthy-threshold=1`: one successful check is enough to mark it
-    healthy under this configuration.
--   `--unhealthy-threshold=3`: three consecutive failures are needed to
-    mark it unhealthy under this configuration.
-
-Create a backend health check:
-
-``` bash
 gcloud compute health-checks create http fancy-be-hc \
   --port=8081 \
   --request-path=/api/orders \
@@ -1636,844 +701,327 @@ gcloud compute health-checks create http fancy-be-hc \
   --healthy-threshold=1 \
   --timeout=10s \
   --unhealthy-threshold=3
-```
 
-The application must actually respond successfully on the configured
-port and path. A health check cannot make an application healthy if the
-application is not listening or the path returns an error.
-
-### Allow health-check traffic through the firewall
-
-The lab uses:
-
-``` bash
+# 2. Open the firewall so Google's health-check servers can reach ports 8080, 8081, and 8082
 gcloud compute firewall-rules create allow-health-check \
-  --allow=tcp:8080-8081 \
+  --allow=tcp:8080-8082 \
   --source-ranges=130.211.0.0/22,35.191.0.0/16 \
   --network=default
-```
 
-This creates an ingress rule allowing TCP traffic from the listed Google
-health-check source ranges to the selected network. The exact source
-ranges and firewall requirements depend on the load-balancer and
-health-check configuration. Check the documentation for the
-load-balancer type you deploy.
-
-### Apply an autohealing policy to a MIG
-
-``` bash
+# 3. Turn on Autohealing on both MIGs (--initial-delay=300 gives a new VM 5 minutes to finish its startup script before health checks judge it)
 gcloud compute instance-groups managed update fancy-fe-mig \
   --zone=us-west1-b \
   --health-check=fancy-fe-hc \
   --initial-delay=300
-```
 
-``` bash
 gcloud compute instance-groups managed update fancy-be-mig \
   --zone=us-west1-b \
   --health-check=fancy-be-hc \
   --initial-delay=300
+
 ```
 
-`--initial-delay=300` gives a newly created VM time to start its
-application before autohealing health checks are used to decide whether
-the instance needs repair. Choose a delay that reflects the real startup
-time of the application.
+### 5.13 Load Balancing (Putting Everything Behind One Public IP)
 
-## 8.15 Load balancing
+#### What Is a Load Balancer?
 
-### What is a load balancer?
+If 1,000 shoppers visit your online store at once, sending all of them to a single VM will overload it. An [External Application Load Balancer](https://cloud.google.com/load-balancing/docs/https) sits in front of your MIGs, gives your website **one single public IP address**, and spreads visitors evenly across your healthy VMs.
 
-A load balancer receives requests and distributes them across multiple
-backend servers.
+Even better, it can read the URL path a shopper visits and send the request to the right service:
 
-Imagine that 1,000 users visit your application at the same time. If all
-requests go to one VM, that VM may become overloaded.
+* Shopper visits `/` → goes to the **Frontend Service** (`fancy-fe-mig` on port `8080`)
 
-A load balancer can distribute requests across several healthy VMs. If
-one backend is unhealthy, the load balancer can avoid sending new
-traffic to it.
+* Shopper visits `/api/orders` → goes to the **Orders Service** (`fancy-be-mig` on port `8081`)
 
-### Why use a load balancer?
+* Shopper visits `/api/products` → goes to the **Products Service** (`fancy-be-mig` on port `8082`)
 
--   Distributes traffic across multiple VM instances.
--   Provides a common frontend IP address.
--   Works with health checks to avoid unhealthy backends.
--   Supports routing rules, such as sending `/api/orders` to one backend
-    and `/api/products` to another.
--   Can work with managed instance groups as backends.
+#### How the Load Balancer Parts Fit Together
 
-### Main components of an external HTTP load balancer
+Think of a request arriving from a user's browser and passing through four doors in order:
 
-The lab's HTTP load-balancer flow can be understood as:
+**User Browser → 1. Forwarding Rule → 2. Target HTTP Proxy → 3. URL Map → 4. Backend Service → Healthy MIG VMs**
 
-**Client → Forwarding rule → Target HTTP proxy → URL map → Backend
-service → Healthy backend VM(s)**
+| Load Balancer Part | What It Does in Simple Words | Name in Our Commands | 
+| ----- | ----- | ----- | 
+| **1. Forwarding Rule** | The front door: holds the public IP address and listens on port `80` ([External Application Load Balancer overview](https://cloud.google.com/load-balancing/docs/https)). | `fancy-http-rule` | 
+| **2. Target HTTP Proxy** | The receptionist: accepts the HTTP request from the front door and opens the routing directory (URL Map) ([Target proxies](https://cloud.google.com/load-balancing/docs/target-proxies)). | `fancy-proxy` | 
+| **3. URL Map** | The routing directory: looks at the URL path (`/api/orders`, `/api/products`, or `/`) and picks the matching Backend Service ([URL maps](https://cloud.google.com/load-balancing/docs/url-map-concepts)). | `fancy-map` | 
+| **4. Backend Service** | The team manager: connects the route to the actual MIG, checks its health check, and knows which named port (`frontend`, `orders`, or `products`) to use. | `fancy-fe-frontend`, `fancy-be-orders`, `fancy-be-products` | 
 
-  -----------------------------------------------------------------------
-  Component                           Simple explanation
-  ----------------------------------- -----------------------------------
-  Forwarding rule                     Receives traffic on an IP address
-                                      and port, such as TCP port 80.
+#### Complete Commands to Build the Load Balancer
 
-  Target HTTP proxy                   Receives HTTP requests and uses the
-                                      URL map to decide where they should
-                                      go.
+Notice how `fancy-be-orders` and `fancy-be-products` are two separate Backend Services, but both point to the **same** `fancy-be-mig` group using its two different named ports (`orders` and `products`):
 
-  URL map                             Contains routing rules, such as
-                                      path-based rules.
-
-  Backend service                     Defines the backend group(s),
-                                      health checks, and traffic-related
-                                      settings.
-
-  Backend                             The actual serving resources, such
-                                      as a MIG.
-
-  Health check                        Tests whether the backend
-                                      application is responding.
-  -----------------------------------------------------------------------
-
-### Example of path-based routing
-
-Suppose one public application uses these URLs:
-
-  Request path      Destination
-  ----------------- ------------------
-  `/`               Frontend service
-  `/api/orders`     Orders service
-  `/api/products`   Products service
-
-The URL map checks the request path and selects the matching backend
-service.
-
-This lets users access different application components through one
-public load-balancer IP address.
-
-### Important gap in the supplied lab commands
-
-Your notes create the frontend backend service named
-`fancy-fe-frontend`, but the path matcher refers to `fancy-be-orders`
-and `fancy-be-products`.
-
-Those two backend services must also exist before the path matcher can
-successfully refer to them. The supplied excerpt does not include their
-creation commands. Treat this as a missing step in the notes, not as a
-command that can be skipped.
-
-A backend service generally needs: - A health check. - A named port that
-matches the instance group's named port. - The correct instance group
-added as a backend.
-
-### Create the frontend health check
-
-``` bash
+```
+# STEP 1: Create Load-Balancer health checks for all three services (8080, 8081, and 8082)
 gcloud compute health-checks create http fancy-fe-frontend-hc \
   --request-path=/ \
   --port=8080
-```
 
-This health check requests `/` on port 8080.
+gcloud compute health-checks create http fancy-be-orders-hc \
+  --request-path=/api/orders \
+  --port=8081
 
-### Create a frontend backend service
+gcloud compute health-checks create http fancy-be-products-hc \
+  --request-path=/api/products \
+  --port=8082
 
-``` bash
+# STEP 2: Create the three Backend Services using the named ports we set in Section 5.11
 gcloud compute backend-services create fancy-fe-frontend \
   --health-checks=fancy-fe-frontend-hc \
   --port-name=frontend \
   --global
-```
 
-This creates a global backend service that uses the `frontend` named
-port and the frontend health check.
+gcloud compute backend-services create fancy-be-orders \
+  --health-checks=fancy-be-orders-hc \
+  --port-name=orders \
+  --global
 
-### Add the frontend MIG as a backend
+gcloud compute backend-services create fancy-be-products \
+  --health-checks=fancy-be-products-hc \
+  --port-name=products \
+  --global
 
-``` bash
+# STEP 3: Connect the MIGs to each Backend Service
 gcloud compute backend-services add-backend fancy-fe-frontend \
   --instance-group=fancy-fe-mig \
   --instance-group-zone=us-west1-b \
   --global
-```
 
-This tells the backend service to use the frontend MIG's VM instances as
-backends.
+gcloud compute backend-services add-backend fancy-be-orders \
+  --instance-group=fancy-be-mig \
+  --instance-group-zone=us-west1-b \
+  --global
 
-The backend services for orders and products need equivalent
-configuration, using the appropriate health checks, named ports, and
-backend group. Create those services before adding path rules that
-reference them.
+gcloud compute backend-services add-backend fancy-be-products \
+  --instance-group=fancy-be-mig \
+  --instance-group-zone=us-west1-b \
+  --global
 
-### Create a URL map
-
-``` bash
+# STEP 4: Create the URL Map and add rules for /api/orders and /api/products
 gcloud compute url-maps create fancy-map \
   --default-service=fancy-fe-frontend
-```
 
-The default service handles requests that do not match a more specific
-rule.
-
-### Add path-based rules
-
-Once the orders and products backend services have been created:
-
-``` bash
 gcloud compute url-maps add-path-matcher fancy-map \
   --default-service=fancy-fe-frontend \
   --path-matcher-name=api-routes \
+  --new-hosts="*" \
   --path-rules="/api/orders=fancy-be-orders,/api/products=fancy-be-products"
-```
 
-The two named backend services must exist. The URL map sends requests
-for those paths to the corresponding service.
-
-### Create a target HTTP proxy
-
-``` bash
+# STEP 5: Create the Target HTTP Proxy and the Global Forwarding Rule on port 80
 gcloud compute target-http-proxies create fancy-proxy \
   --url-map=fancy-map
-```
 
-The target HTTP proxy connects the HTTP load-balancing frontend to the
-URL map.
-
-### Create a global forwarding rule
-
-``` bash
 gcloud compute forwarding-rules create fancy-http-rule \
   --global \
   --target-http-proxy=fancy-proxy \
   --ports=80
-```
 
-This creates a global forwarding rule that directs HTTP traffic on port
-80 to the target HTTP proxy.
-
-List the forwarding rules:
-
-``` bash
+# STEP 6: Find the public IP address of your new Load Balancer
 gcloud compute forwarding-rules list --global
+
 ```
 
-Use the resulting frontend IP address to test the load balancer.
+### 5.14 SSL/TLS Certificates (HTTP vs. HTTPS)
 
-**Production note:** This is an HTTP example. For public production
-applications, HTTPS is normally recommended. An HTTPS load balancer uses
-a target HTTPS proxy and a certificate, and generally receives client
-HTTPS traffic on port 443.
+Why do real websites use `https://` instead of `http://`?
 
-## 8.16 SSL/TLS certificates
+* **HTTP (Port 80)**: Sends information as plain, readable text across the internet. Anyone on the network path could snoop on passwords or credit card numbers ([External Application Load Balancer overview](https://cloud.google.com/load-balancing/docs/https)).
 
-### What is an SSL certificate?
+* **HTTPS (Port 443)**: Uses an **SSL/TLS Certificate** to prove the website really belongs to your domain and scrambles (encrypts) all data between the user's browser and your Load Balancer ([Target proxies](https://cloud.google.com/load-balancing/docs/target-proxies)).
 
-An SSL certificate is a digital certificate used to prove the identity
-of a website or server.
+| Feature | HTTP Load Balancer (Used in Lab) | HTTPS Load Balancer (Used in Production) | 
+| ----- | ----- | ----- | 
+| **Is traffic encrypted?** | No (plain text). | Yes (encrypted with TLS). | 
+| **Standard port** | Port `80` | Port `443` | 
+| **Proxy used** | `target-http-proxies` ([Target proxies](https://cloud.google.com/load-balancing/docs/target-proxies)) | `target-https-proxies` + an SSL Certificate ([Target proxies](https://cloud.google.com/load-balancing/docs/target-proxies)) | 
 
-The modern protocol is TLS (Transport Layer Security). People still
-commonly say "SSL certificate," but current secure HTTPS connections use
-TLS.
+The lab uses HTTP on port `80` only because creating an SSL certificate requires owning a real domain name (like `example.com`).
 
-### Why is a certificate needed?
+### 5.15 Autoscaling and Cloud CDN
 
-When a user opens:
+#### What Is Autoscaling?
 
-``` text
-https://example.com
+**Autoscaling** lets your MIG automatically add more VMs when traffic gets busy, and delete extra VMs when traffic drops so you save money ([Managed instance groups](https://cloud.google.com/compute/docs/instance-groups)).
+
+> **Watch out for this lab trap:** If your MIG already runs `2` VMs and you set `--max-num-replicas=2`, the autoscaler can never add a 3rd VM! Always set `--max-num-replicas` higher than your starting size (for example, `5`) if you want it to scale out:
+
 ```
-
-the browser needs to establish an encrypted connection to the correct
-website.
-
-A certificate helps the browser:
-
-1.  Check that the server is authorized to represent the domain.
-2.  Verify the server's identity through the certificate chain.
-3.  Establish encryption keys for the secure connection.
-4.  Protect data sent between the browser and the server from being read
-    or modified by an attacker on the network.
-
-A certificate is not a replacement for application authentication. It
-secures the connection and helps authenticate the server's identity.
-
-### HTTP vs. HTTPS
-
-  -----------------------------------------------------------------------
-  HTTP                                HTTPS
-  ----------------------------------- -----------------------------------
-  Does not encrypt the HTTP           Protects the connection using TLS.
-  connection by itself.               
-
-  Commonly uses port 80.              Commonly uses port 443.
-
-  Not suitable for sensitive public   Recommended for public production
-  application traffic without another web applications.
-  secure transport layer.             
-  -----------------------------------------------------------------------
-
-### How this relates to the load balancer
-
--   An HTTP load balancer uses a target HTTP proxy.
--   An HTTPS load balancer uses a target HTTPS proxy and a certificate
-    configuration.
--   The certificate is presented to the client during the TLS handshake.
--   The load balancer then routes the request according to its URL map.
-
-The lab uses HTTP to avoid certificate setup during the exercise. That
-simplifies the lab but is not a production security recommendation.
-
-## 8.17 Rolling updates and replacing instances
-
-### What is a rolling update?
-
-A rolling update changes the VM instances in a MIG gradually or
-according to a configured update policy.
-
-For example, suppose a frontend MIG has four VMs. You create a new
-instance template with an updated application configuration. A rolling
-update can replace the old VMs with new VMs in a controlled way.
-
-This avoids manually changing each VM.
-
-### Rolling replace command in the lab
-
-``` bash
-gcloud compute instance-groups managed rolling-action replace fancy-fe-mig \
-  --zone=us-west1-b \
-  --max-unavailable=100%
-```
-
-This tells the MIG to replace instances. The `--max-unavailable=100%`
-setting allows all instances to be unavailable during the operation.
-
-**Important:** This setting can cause downtime. It is used in the lab
-for speed, not as a safe production default. For production, choose
-`max-unavailable` and `max-surge` values that preserve enough serving
-capacity while the update runs.
-
-### Check backend health
-
-``` bash
-watch -n 2 \
-  gcloud compute backend-services get-health fancy-fe-frontend --global
-```
-
-This repeatedly checks the health status of the backend service.
-
--   `watch` repeats a command.
--   `-n 2` repeats it every two seconds.
--   `get-health` reports backend health information.
-
-Press `Ctrl+C` to stop `watch`.
-
-If instances remain unhealthy, check:
-
-1.  Is the application process running?
-2.  Is it listening on the expected port?
-3.  Does the health-check path return a successful response?
-4.  Does the firewall allow health-check traffic?
-5.  Did the startup script finish successfully?
-6.  Can the application be reached directly from an allowed network
-    path?
-
-An instance can be running at the VM level while the application inside
-it is not ready.
-
-## 8.18 Autoscaling
-
-### What is autoscaling?
-
-Autoscaling automatically changes the number of VM instances in a MIG
-based on configured signals and limits.
-
-For example:
-
--   When demand increases, the MIG can add VMs.
--   When demand decreases, the MIG can remove extra VMs, subject to the
-    configured minimum and other rules.
-
-Autoscaling helps the application respond to changing demand without an
-administrator manually changing the group size.
-
-### Example: autoscaling based on load-balancing utilization
-
-The lab uses:
-
-``` bash
-gcloud compute instance-groups managed set-autoscaling fancy-be-mig \
-  --zone=us-west1-b \
-  --max-num-replicas=2 \
-  --target-load-balancing-utilization=0.60
-```
-
-This configures autoscaling based on load-balancing utilization, with a
-maximum of two replicas.
-
-**Important limitation in the lab value:** If the group already has two
-instances and the maximum is two, the autoscaler cannot add a third
-instance. To demonstrate scale-out, configure a maximum greater than the
-current group size.
-
-For example, an illustrative configuration is:
-
-``` bash
+# Automatically scale fancy-be-mig between 2 and 5 VMs when load exceeds 60%
 gcloud compute instance-groups managed set-autoscaling fancy-be-mig \
   --zone=us-west1-b \
   --min-num-replicas=2 \
   --max-num-replicas=5 \
   --target-load-balancing-utilization=0.60
+
 ```
 
-This sets a minimum of two and a maximum of five instances. The target
-is a scaling signal, not a guarantee that the group will always have
-exactly the number of VMs needed for every traffic pattern.
+#### What Is Cloud CDN?
 
-Autoscaling can use different signals, such as CPU utilization or
-load-balancing utilization. Choose a signal that reflects the
-application's actual bottleneck and configure appropriate limits.
+Suppose 10,000 users around the world open your store homepage and download the same product photos and CSS files. Without caching, every single photo request has to travel all the way to your VMs in `us-west1-b`.
 
-## 8.19 Cloud CDN
+[Cloud CDN (Content Delivery Network)](https://cloud.google.com/cdn/docs/overview) saves temporary copies of your static images and files at Google edge locations close to your users:
 
-### What is Cloud CDN?
+* **Cache Hit**: Google already has a copy of the image nearby and sends it straight to the user immediately (fast for the user, zero work for your VM) ([Cloud CDN overview](https://cloud.google.com/cdn/docs/overview)).
 
-Cloud CDN is a content delivery service that caches eligible content
-closer to users.
+* **Cache Miss**: Google does not have the file cached yet, so it fetches it from your VM once and saves a copy for the next visitor ([Cloud CDN overview](https://cloud.google.com/cdn/docs/overview)).
 
-A cache is a temporary copy of content kept so it can be served again
-without always requesting it from the original backend.
-
-### Why use Cloud CDN?
-
-Imagine that users in different countries repeatedly request the same
-images, JavaScript files, stylesheets, or other cacheable content.
-
-Without a cache, every request may need to reach the backend. With Cloud
-CDN, eligible content can be served from a cache location closer to the
-user.
-
-Benefits can include:
-
--   Lower response latency for cache hits.
--   Less repeated work for the backend.
--   Reduced data transfer from the backend for cached content.
-
-### Enable Cloud CDN on a backend service
-
-The lab uses:
-
-``` bash
+```
+# Turn on Cloud CDN for the frontend Backend Service
 gcloud compute backend-services update fancy-fe-frontend \
   --enable-cdn \
   --global
+
 ```
 
-This enables Cloud CDN for the specified global backend service.
+### 5.16 Updating Your App vs. Updating Your VM Template
 
-### Cache hit and cache miss
+When you want to update your running website, ask yourself: **Did I change the application code, or did I change the VM's hardware/settings?**
 
--   **Cache hit:** The requested object is already available in the
-    cache and can be served from there.
--   **Cache miss:** The object is not available in the cache, so the
-    request goes to the backend. If the response is eligible for
-    caching, it may be stored for later requests.
+| What Changed? | Simple Example | How to Roll It Out | 
+| ----- | ----- | ----- | 
+| **Case A: Only your app code changed** | You changed text on the homepage or updated Node.js code inside the bucket ([Startup scripts](https://cloud.google.com/compute/docs/instances/startup-scripts)). | Copy the new code to your bucket, then tell the MIG to **replace** its VMs (`rolling-action replace`) so fresh VMs boot up and download the new code ([Rolling updates for managed instance groups](https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups)). | 
+| **Case B: The VM settings changed** | You want a smaller machine type (`e2-small` instead of `e2-standard-2`) or a new Linux image ([Instance templates](https://cloud.google.com/compute/docs/instance-templates)). | Because templates cannot be edited, create a **new Instance Template** (`fancy-fe-new`) and run `rolling-action start-update` on the MIG ([Rolling updates for managed instance groups](https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups)). | 
 
-Not every response is automatically cacheable. Cache behavior depends on
-the backend configuration and HTTP caching rules and headers.
-
-## 8.20 Updating the application and VM template
-
-The lab describes two different types of change. Keep them separate.
-
-### Case A: The application code changes
-
-If the startup script downloads application code from Cloud Storage:
-
-1.  Update the application code.
-2.  Build or prepare the new application artifact.
-3.  Upload the new artifact to Cloud Storage.
-4.  Ensure the startup process will retrieve the new artifact.
-5.  Restart or replace the VM instances so the new startup process runs.
-6.  Check the application and backend health.
-
-The lab includes a command to remove existing Node.js dependency folders
-before copying the code:
-
-``` bash
+```
+# CASE A: Upload updated code to the bucket, then replace the VMs in fancy-fe-mig
+# (Note: --max-unavailable=100% replaces all VMs at once so the lab finishes fast.
+# In real projects, keep --max-unavailable=0 so users never see downtime!)
 cd ~
 rm -rf monolith-to-microservices/*/node_modules
+gcloud storage cp -r monolith-to-microservices gs://YOUR_UNIQUE_BUCKET_NAME/
 
-gcloud storage cp -r monolith-to-microservices \
-  gs://YOUR_BUCKET_NAME/
-```
+gcloud compute instance-groups managed rolling-action replace fancy-fe-mig \
+  --zone=us-west1-b \
+  --max-unavailable=100%
 
-Be careful about the destination and object names. A production
-deployment should use a versioned artifact or a distinct release path so
-that new VMs do not accidentally retrieve a partially uploaded or
-unexpected version.
-
-### Case B: VM configuration changes
-
-Examples include:
-
--   Changing the machine type.
--   Changing the boot image.
--   Changing network tags.
--   Changing the service account.
--   Changing startup-script metadata.
-
-These are VM configuration changes. The correct pattern is to create a
-new instance template and roll it out to the MIG.
-
-### Why create a new template?
-
-Instance templates are immutable. You cannot edit an existing template
-in place.
-
-The lab changes the machine type of an existing VM:
-
-``` bash
+# CASE B: Change the stopped 'frontend' VM to e2-small, save a new template, and update the MIG
 gcloud compute instances set-machine-type frontend \
   --zone=us-west1-b \
   --machine-type=e2-small
-```
 
-Then it creates a new template from that VM:
-
-``` bash
 gcloud compute instance-templates create fancy-fe-new \
   --source-instance=frontend \
   --source-instance-zone=us-west1-b
-```
 
-Finally, it starts a MIG update:
-
-``` bash
 gcloud compute instance-groups managed rolling-action start-update fancy-fe-mig \
   --zone=us-west1-b \
   --version=template=fancy-fe-new
+
+# Watch the Load Balancer health and MIG rollout live every 2 seconds (Press Ctrl+C to stop)
+watch -n 2 gcloud compute backend-services get-health fancy-fe-frontend --global
+watch -n 2 gcloud compute instance-groups managed list-instances fancy-fe-mig --zone=us-west1-b
+
 ```
 
-This tells the MIG to roll out the new template version.
+### 5.17 Why Does the Lab Use SSH to Kill a Node.js Process?
 
-Check the rollout:
+To prove that **Autohealing** works, labs sometimes ask you to log into a VM with [SSH](https://cloud.google.com/compute/docs/connect/standard-ssh), find the running Node.js app, and stop (`kill`) it on purpose. Because the Node.js process is running inside the VM's Linux operating system, you must step inside the VM via SSH to stop it:
 
-``` bash
-watch -n 2 \
-  gcloud compute instance-groups managed list-instances fancy-fe-mig \
-  --zone=us-west1-b
 ```
+# 1. From Cloud Shell: SSH into one of the frontend VMs
+gcloud compute ssh FANCY_FE_INSTANCE_NAME --zone=us-west1-b
 
-**Important:** Changing one VM that belongs to a MIG is not the normal
-way to manage the whole group. The MIG is designed to keep instances
-consistent with its template. For repeatable changes, create a new
-template and update the MIG. The lab uses an existing VM as a convenient
-way to capture a new template, but production teams often define
-templates directly and keep their configuration in source control.
-
-## 8.21 Why does the lab use SSH to kill a Node.js process?
-
-Your notes ask why killing a Node.js process requires an SSH connection.
-
-The reason is that the Node.js process is running inside the VM. To
-inspect or stop that process manually, you need to run commands on the
-VM's operating system.
-
-You can connect from Cloud Shell:
-
-``` bash
-gcloud compute ssh frontend --zone=us-west1-b
-```
-
-Inside the VM, inspect Node.js processes:
-
-``` bash
+# 2. Inside the VM: Find the Process ID (PID) of the running Node.js app
 ps aux | grep node
-```
 
-This lists processes and searches for the word `node`.
-
-To stop a process, first identify its correct process ID (PID). Then:
-
-``` bash
+# 3. Inside the VM: Stop that process politely using its PID number
 kill PID
+
 ```
 
-Use the actual PID in place of `PID`.
+Once you stop the Node.js process, the health check on port `8080` starts failing, and after 3 failures in a row, the MIG automatically replaces the VM!
 
-`kill` normally sends a termination signal asking the process to stop.
-Avoid using `kill -9` unless necessary because it forcefully terminates
-the process and does not give it a chance to shut down cleanly.
+**Do you need SSH to restart apps in real life?**
+No. In production, you configure a Linux service manager called **`systemd`** (`sudo systemctl restart myapp`) so Linux restarts a crashed process automatically within seconds, or you deploy new versions through an automated CI/CD pipeline.
 
-### Do you always need SSH to stop an application?
+### 5.18 Putting It All Together: The Complete Picture
 
-No.
+Here is how all 15 steps in the lab connect from start to finish:
 
-SSH is one way to administer the VM manually. In a real application, it
-is usually better to run the application under a service manager such as
-`systemd`, or use a process manager or deployment platform that can
-start, stop, and restart it consistently.
+1. **Store code centrally**: Put your app code and `startup-script.sh` into a [Cloud Storage](https://cloud.google.com/storage/docs) bucket.
 
-For example, if the application is configured as a `systemd` service:
+2. **Set up permissions**: Create a **Service Account** (`fancy-vm-sa`) that can read that bucket.
 
-``` bash
-sudo systemctl status myapp
-sudo systemctl restart myapp
-sudo systemctl stop myapp
-```
+3. **Build prototype VMs**: Create `frontend` and `backend` VMs that run the startup script on boot.
 
-Replace `myapp` with the actual service name.
+4. **Open firewall ports**: Add network tags (`frontend`, `backend`) and firewall rules for ports `8080`, `8081`, and `8082`.
 
-A process that is managed by `systemd` can be restarted after a VM
-reboot according to its service configuration. A process started
-manually in a terminal may stop when the session ends or may not restart
-automatically.
+5. **Save blueprints**: Stop the prototype VMs and save them as immutable [Instance Templates](https://cloud.google.com/compute/docs/instance-templates) (`fancy-fe` and `fancy-be`).
 
-## 8.22 Troubleshooting checklist for this lab
+6. **Launch MIGs**: Create two [Managed Instance Groups](https://cloud.google.com/compute/docs/instance-groups) (`fancy-fe-mig` and `fancy-be-mig`) from those templates and label their **Named Ports** (`frontend:8080`, `orders:8081`, `products:8082`).
 
-Use this checklist when a VM, application, MIG, or load balancer does
-not work.
+7. **Turn on Autohealing**: Attach health checks to the MIGs and allow Google's health-check IPs (`130.211.0.0/22`, `35.191.0.0/16`) through the firewall.
 
-### VM creation problems
+8. **Add a Load Balancer**: Create three **Backend Services** (`fancy-fe-frontend`, `fancy-be-orders`, `fancy-be-products`), connect them to a [URL Map](https://cloud.google.com/load-balancing/docs/url-map-concepts) (`fancy-map`), and expose them on port `80` with a **Target HTTP Proxy** and **Forwarding Rule**.
 
-``` bash
-gcloud config list
-gcloud compute instances list
-gcloud compute instances describe VM_NAME --zone=ZONE
-```
+9. **Turn on Autoscaling & CDN**: Enable **Autoscaling** so VMs scale with traffic and [Cloud CDN](https://cloud.google.com/cdn/docs/overview) so static files load fast from nearby edge caches.
 
-Check:
+### 5.19 Simple Troubleshooting Checklist
 
--   Is the correct project selected?
--   Is the requested zone correct?
--   Is the Compute Engine API enabled?
--   Does the account have the required IAM permissions?
--   Is quota available for the requested machine type and region?
+When something does not work in a lab, check this table first:
 
-### SSH connection problems
+| Problem You See | Most Likely Cause | Command to Check It | 
+| ----- | ----- | ----- | 
+| **Cannot create a VM** | Wrong project/zone selected, Compute Engine API is off, or missing IAM permission ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | `gcloud config list` and `gcloud services list --enabled` | 
+| **Cannot SSH into a VM** | The VM is stopped, port `22` is blocked by a firewall rule, or you lack the [OS Login](https://cloud.google.com/compute/docs/oslogin) IAM role. | `gcloud compute instances list` | 
+| **App did not start on the VM** | The startup script URL had a typo, or the VM's Service Account cannot read the bucket ([Startup scripts](https://cloud.google.com/compute/docs/instances/startup-scripts)). | `sudo journalctl -u google-startup-scripts.service` (inside VM) | 
+| **Load Balancer says `UNHEALTHY`** | The `allow-health-check` firewall rule doesn't cover ports `8080-8082`, the named port doesn't match, or the startup script is still running ([External Application Load Balancer overview](https://cloud.google.com/load-balancing/docs/https)). | `gcloud compute backend-services get-health SERVICE_NAME --global` | 
+| **Autoscaler never adds a 3rd VM** | `--max-num-replicas` was set to `2` (the same as the current size) instead of a higher number ([Managed instance groups](https://cloud.google.com/compute/docs/instance-groups)). | `gcloud compute instance-groups managed describe MIG_NAME --zone=ZONE` | 
 
-Check:
+## 6. Quick Command Reference
 
--   Is the VM running?
--   Is the project and zone correct?
--   Does the user have the required IAM access?
--   Is SSH access allowed by the VPC firewall on TCP port 22?
--   Is OS Login enabled, and does the user have the required OS Login
-    role?
--   Is the VM using metadata-based SSH keys instead?
--   Is the correct SSH key available?
+| What You Want to Do | Command to Run | 
+| ----- | ----- | 
+| **Check logged-in Google account** | `gcloud auth list` | 
+| **Check current Project ID** | `gcloud config get-value project` | 
+| **Switch to another Project ID** | `gcloud config set project PROJECT_ID` | 
+| **Set default zone and region** | `gcloud config set compute/zone ZONE` and `gcloud config set compute/region REGION` | 
+| **Turn on an API** | `gcloud services enable compute.googleapis.com` | 
+| **Give a user Viewer access** | `gcloud projects add-iam-policy-binding PROJECT_ID --member="user:EMAIL" --role="roles/viewer"` | 
+| **Create a Service Account** | `gcloud iam service-accounts create SA_NAME --display-name="NAME"` | 
+| **Create a Pub/Sub topic & subscription** | `gcloud pubsub topics create TOPIC` and `gcloud pubsub subscriptions create SUB --topic=TOPIC` | 
+| **List all VMs** | `gcloud compute instances list` | 
+| **Create a basic Debian VM** | `gcloud compute instances create VM_NAME --zone=ZONE --machine-type=e2-medium --image-family=debian-12 --image-project=debian-cloud` | 
+| **SSH into a VM** | `gcloud compute ssh VM_NAME --zone=ZONE` | 
+| **Stop / Start a VM** | `gcloud compute instances stop VM_NAME --zone=ZONE` / `gcloud compute instances start VM_NAME --zone=ZONE` | 
+| **Create & attach a Persistent Disk** | `gcloud compute disks create DISK --size=200GB --zone=ZONE` and `gcloud compute instances attach-disk VM_NAME --disk=DISK --zone=ZONE` | 
+| **Copy a file or folder to a bucket** | `gcloud storage cp FILE gs://BUCKET/` and `gcloud storage cp -r FOLDER gs://BUCKET/` | 
+| **Create an Instance Template** | `gcloud compute instance-templates create TEMPLATE --source-instance=VM_NAME --source-instance-zone=ZONE` | 
+| **Create a Managed Instance Group (MIG)** | `gcloud compute instance-groups managed create MIG --zone=ZONE --base-instance-name=BASE --size=2 --template=TEMPLATE` | 
+| **Set Named Ports on a MIG** | `gcloud compute instance-groups set-named-ports MIG --zone=ZONE --named-ports=orders:8081,products:8082` | 
+| **Check Load Balancer backend health** | `gcloud compute backend-services get-health BACKEND_SERVICE --global` | 
 
-Useful command:
+## 7. Official Google Cloud Documentation Links
 
-``` bash
-gcloud compute ssh VM_NAME --zone=ZONE
-```
+* [Compute Engine Overview](https://cloud.google.com/compute/docs/overview)
 
-### Application not responding
+* [Connect to Linux VMs Using SSH](https://cloud.google.com/compute/docs/connect/standard-ssh)
 
-Inside the VM:
-
-``` bash
-sudo systemctl status nginx
-ps aux | grep node
-sudo journalctl -u nginx -n 50
-curl http://localhost:8080
-```
-
-Check:
-
--   Did the startup script finish?
--   Is the application process running?
--   Is it listening on the expected port?
--   Does the health-check path return a successful response?
--   Are environment variables and dependencies correct?
-
-### Startup script problems
-
-Check:
-
--   Is the script URL correct?
--   Does the VM's service account have permission to read the object?
--   Is the guest environment installed and running?
--   Does the script have a valid shebang such as `#!/bin/bash`?
--   Are commands failing because of missing packages or incorrect paths?
--   Does the script handle repeated execution safely?
-
-### Load balancer reports an unhealthy backend
-
-Check:
-
--   Does the backend service use the correct named port?
--   Is the health check using the correct port and path?
--   Is the application listening on that port?
--   Does the firewall allow the required health-check traffic?
--   Is the correct MIG attached to the backend service?
--   Has the application finished starting?
-
-### MIG does not update as expected
+* [About SSH Connections and SSH Keys](https://cloud.google.com/compute/docs/instances/ssh)
 
-Check:
+* [Manage VM Access with OS Login](https://cloud.google.com/compute/docs/oslogin)
 
--   Does the new instance template exist?
--   Is the MIG configured to use the new template version?
--   Is the update still in progress?
--   Are instances failing startup or health checks?
--   Is the update policy allowing enough capacity during replacement?
+* [Persistent Disk Overview](https://cloud.google.com/compute/docs/disks/persistent-disks)
 
-### Autoscaling does not add instances
+* [Add a Persistent Disk to a VM](https://cloud.google.com/compute/docs/disks/add-persistent-disk)
 
-Check:
+* [Local SSD Documentation](https://cloud.google.com/compute/docs/disks/local-ssd)
 
--   Is autoscaling enabled on the correct MIG?
--   Is the maximum replica count greater than the current size?
--   Is the selected utilization signal actually reaching the target?
--   Is the MIG in the expected zone or region?
--   Are quota and capacity available?
+* [Use Startup Scripts on Linux VMs](https://cloud.google.com/compute/docs/instances/startup-scripts)
 
+* [Instance Templates Documentation](https://cloud.google.com/compute/docs/instance-templates)
 
-## 8.24 Practical end-to-end picture: how all the pieces work together
+* [Managed Instance Groups (MIGs)](https://cloud.google.com/compute/docs/instance-groups)
 
-The lab is demonstrating how to run a small application on Compute
-Engine and make it more scalable.
+* [Rolling Out Updates to Managed Instance Groups](https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups)
 
-The high-level flow is:
+* [External Application Load Balancer Overview](https://cloud.google.com/load-balancing/docs/https)
 
-1.  Prepare the application code and startup script.
-2.  Upload the code and startup script to Cloud Storage.
-3.  Create frontend and backend VM instances.
-4.  Configure the VMs to run the startup script.
-5.  Add network tags and firewall rules.
-6.  Create instance templates from the VM configurations.
-7.  Create frontend and backend MIGs from those templates.
-8.  Configure named ports and health checks.
-9.  Configure autohealing for the MIGs.
-10. Create backend services and connect the MIGs.
-11. Create a URL map to route requests.
-12. Create a target proxy and forwarding rule to expose the application.
-13. Configure autoscaling and Cloud CDN where appropriate.
-14. When the application or VM configuration changes, publish the new
-    artifact or create a new template and roll it out.
-15. Check application health and troubleshoot any failing components.
+* [URL Maps and Path Matchers](https://cloud.google.com/load-balancing/docs/url-map-concepts)
 
-### Architecture in simple terms
+* [Target Proxies for Load Balancing](https://cloud.google.com/load-balancing/docs/target-proxies)
 
-``` text
-                         Users
-                           |
-                           v
-                  Public Load Balancer
-                           |
-                           v
-                        URL Map
-                    /              \
-                   /                \
-                  v                  v
-           Frontend Service     Backend Services
-                  |              /          \
-                  v             v            v
-             Frontend MIG   Orders MIG   Products MIG
-                  |             |            |
-             Multiple VMs   Multiple VMs  Multiple VMs
-                  \             |            /
-                   \            |           /
-                    \           v          /
-                     Application resources
-                              |
-                              v
-                       Cloud Storage
-                 (code and startup scripts)
-```
-
-This is a conceptual view of the lab. The exact backend services and
-MIGs must be created and connected as described in the command sections.
-
-------------------------------------------------------------------------
-
-
-------------------------------------------------------------------------
-
-## 10. Quick command reference
-
-  --------------------------------------------------------------------------------------------------------------------
-  Task                                Command
-  ----------------------------------- --------------------------------------------------------------------------------
-  Show active account                 `gcloud auth list`
-
-  Show active project                 `gcloud config get-value project`
-
-  Set project                         `gcloud config set project PROJECT_ID`
-
-  Set default zone                    `gcloud config set compute/zone ZONE`
-
-  Set default region                  `gcloud config set compute/region REGION`
-
-  List VMs                            `gcloud compute instances list`
-
-  Create VM                           `gcloud compute instances create VM_NAME --zone=ZONE --machine-type=e2-medium`
-
-  Connect to VM                       `gcloud compute ssh VM_NAME --zone=ZONE`
-
-  Stop VM                             `gcloud compute instances stop VM_NAME --zone=ZONE`
-
-  Start VM                            `gcloud compute instances start VM_NAME --zone=ZONE`
-
-  Create disk                         `gcloud compute disks create DISK_NAME --size=SIZE --zone=ZONE`
-
-  Attach disk                         `gcloud compute instances attach-disk VM_NAME --disk=DISK_NAME --zone=ZONE`
-
-  List templates                      `gcloud compute instance-templates list`
-
-  List MIGs                           `gcloud compute instance-groups managed list`
-
-  List MIG instances                  `gcloud compute instance-groups managed list-instances MIG_NAME --zone=ZONE`
-
-  List health checks                  `gcloud compute health-checks list`
-
-  List firewall rules                 `gcloud compute firewall-rules list`
-
-  Copy file to bucket                 `gcloud storage cp FILE gs://BUCKET/`
-
-  Copy directory to bucket            `gcloud storage cp -r DIRECTORY gs://BUCKET/`
-  --------------------------------------------------------------------------------------------------------------------
-
-------------------------------------------------------------------------
-
-## 11. Official Google Cloud references
-
-Use official documentation when command flags, machine families, disk
-behavior, IAM requirements, or load-balancer configuration may have
-changed.
-
--   [Compute Engine
-    overview](https://cloud.google.com/compute/docs/overview)
--   [Connect to Linux VMs using
-    SSH](https://cloud.google.com/compute/docs/connect/standard-ssh)
--   [About SSH connections and SSH
-    keys](https://cloud.google.com/compute/docs/instances/ssh)
--   [OS Login](https://cloud.google.com/compute/docs/oslogin)
--   [Persistent
-    Disk](https://cloud.google.com/compute/docs/disks/persistent-disks)
--   [Add a Persistent Disk to a
-    VM](https://cloud.google.com/compute/docs/disks/add-persistent-disk)
--   [Local SSD](https://cloud.google.com/compute/docs/disks/local-ssd)
--   [Startup
-    scripts](https://cloud.google.com/compute/docs/instances/startup-scripts)
--   [Instance
-    templates](https://cloud.google.com/compute/docs/instance-templates)
--   [Managed instance
-    groups](https://cloud.google.com/compute/docs/instance-groups)
--   [Rolling updates for managed instance
-    groups](https://cloud.google.com/compute/docs/instance-groups/rolling-out-updates-to-managed-instance-groups)
--   [External Application Load Balancer
-    overview](https://cloud.google.com/load-balancing/docs/https)
--   [URL
-    maps](https://cloud.google.com/load-balancing/docs/url-map-concepts)
--   [Target
-    proxies](https://cloud.google.com/load-balancing/docs/target-proxies)
--   [Cloud Storage documentation](https://cloud.google.com/storage/docs)
--   [Cloud CDN overview](https://cloud.google.com/cdn/docs/overview)
-
-**Learning objective:** After completing this chapter, you should be
-able to explain how a VM is created, how to access and administer it,
-how disks and startup scripts work, and how instance templates, MIGs,
-health checks, load balancing, autoscaling, and Cloud CDN fit together
-in a practical application deployment.
+* [Cloud Storage Documentation](https://cloud.google.com/storage/docs)
+
+* [Cloud CDN Overview](https://cloud.google.com/cdn/docs/overview)
