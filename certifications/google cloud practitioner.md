@@ -66,16 +66,16 @@ Every access rule (called an **IAM policy binding**) connects three things:
 | Part | Simple Explanation | Example | 
 | ----- | ----- | ----- | 
 | **Principal** | The person or app asking for access ([OS Login](https://cloud.google.com/compute/docs/oslogin)). | `user:developer@example.com` | 
-| **Role** | A bundle of permissions that allows specific actions ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | `Compute Instance Admin` (can create, start, and stop VMs) | 
+| **Role** | A bundle of permissions that allows specific actions ([Roles overview](https://docs.cloud.google.com/iam/docs/roles-overview)). | `Compute Instance Admin` (can create, start, and stop VMs) | 
 | **Resource** | The project, storage bucket, or VM where that access is given ([Cloud Storage documentation](https://cloud.google.com/storage/docs)). | Project `policy-bot-dev` | 
 
 ### 2.2 Three Types of IAM Roles
 
 | Role Type | Simple Explanation | When to Use It | 
 | ----- | ----- | ----- | 
-| **Basic roles** | Very broad roles (`Owner`, `Editor`, `Viewer`) that affect the entire project ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | Use only for quick practice or read-only checks (`Viewer`). Avoid `Owner` and `Editor` in real projects because they give too much power. | 
-| **Predefined roles** | Ready-made roles created by Google for one specific job (for example, only reading files from a storage bucket) ([Cloud Storage documentation](https://cloud.google.com/storage/docs)). | Use these most of the time in real projects. | 
-| **Custom roles** | Roles you build yourself by hand-picking exact permissions ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | Use when none of Google's predefined roles fit your exact security rule. | 
+| **Basic (Primitive) roles** | Very broad roles (`Owner`, `Editor`, `Viewer`) that existed before Cloud IAM and affect the entire project ([Roles overview](https://docs.cloud.google.com/iam/docs/roles-overview)). | Use only for quick practice or read-only checks (`Viewer`). Avoid `Owner` and `Editor` in real projects because they give too much power. | 
+| **Predefined roles** | Ready-made roles created and updated by Google for one specific service or job (for example, only reading files from a storage bucket) ([Roles overview](https://docs.cloud.google.com/iam/docs/roles-overview)). | Use these most of the time in real projects. | 
+| **Custom roles** | Roles you build yourself by hand-picking exact permissions ([Create and manage custom roles](https://docs.cloud.google.com/iam/docs/creating-custom-roles)). | Use when none of Google's predefined roles fit your exact security rule. | 
 
 ### 2.3 The Principle of Least Privilege
 
@@ -87,7 +87,7 @@ Every access rule (called an **IAM policy binding**) connects three things:
 
 ### 2.4 What Is a Service Account?
 
-Normal user accounts (`developer@example.com`) are for human beings. A **Service Account** is an account made for a **machine or application**—such as a [Compute Engine](https://cloud.google.com/compute/docs/overview) VM or a Cloud Run app.
+Normal user accounts (`developer@example.com`) are for human beings. A [Service Account](https://docs.cloud.google.com/iam/docs/service-account-overview) is an account made for a **machine or application**—such as a [Compute Engine](https://cloud.google.com/compute/docs/overview) VM or a Cloud Run app.
 
 For example, if your app running on a VM needs to download a file from a private [Cloud Storage](https://cloud.google.com/storage/docs) bucket, you do not put your personal Google password on the VM. Instead, you create a Service Account, give that Service Account permission to read the bucket, and attach the Service Account to the VM.
 
@@ -141,7 +141,7 @@ Beginners often wonder why they get a "Permission Denied" error even after enabl
 | Step | What It Does in Simple Words | Who It Affects | Command | 
 | ----- | ----- | ----- | ----- | 
 | **1. API Enablement** | Flips the master power switch **ON** for that service inside the project ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | The whole project | `gcloud services enable compute.googleapis.com` | 
-| **2. IAM Permission** | Gives a specific person or Service Account a badge allowing them to use that service ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). | One user or Service Account | `gcloud projects add-iam-policy-binding ...` | 
+| **2. IAM Permission** | Gives a specific person or Service Account a badge allowing them to use that service ([Roles overview](https://docs.cloud.google.com/iam/docs/roles-overview)). | One user or Service Account | `gcloud projects add-iam-policy-binding ...` | 
 
 Also remember: turning on an API is free by itself, but creating resources with that API (like starting a VM) will cost money.
 
@@ -253,8 +253,7 @@ A VM works just like a physical computer server. It has:
 
 * **A Startup Script (Optional)**: A script of commands the VM runs automatically every time it turns on.
 
-**When should you use Compute Engine?**
-Use a VM when you need full control over the Linux or Windows operating system, need to attach custom block disks, or want to install specific server software yourself ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). If you just want to run a simple web API without managing Linux updates or disks, a serverless tool like **Cloud Run** is much less work.
+**When should you use Compute Engine?** Use a VM when you need full control over the Linux or Windows operating system, need to attach custom block disks, or want to install specific server software yourself ([Compute Engine overview](https://cloud.google.com/compute/docs/overview)). If you just want to run a simple web API without managing Linux updates or disks, a serverless tool like **Cloud Run** is much less work.
 
 #### Creating and Managing a Basic VM
 
@@ -932,12 +931,11 @@ kill PID
 
 Once you stop the Node.js process, the health check on port `8080` starts failing, and after 3 failures in a row, the MIG automatically replaces the VM!
 
-**Do you need SSH to restart apps in real life?**
-No. In production, you configure a Linux service manager called **`systemd`** (`sudo systemctl restart myapp`) so Linux restarts a crashed process automatically within seconds, or you deploy new versions through an automated CI/CD pipeline.
+**Do you need SSH to restart apps in real life?** No. In production, you configure a Linux service manager called **`systemd`** (`sudo systemctl restart myapp`) so Linux restarts a crashed process automatically within seconds, or you deploy new versions through an automated CI/CD pipeline.
 
 ### 5.18 Putting It All Together: The Complete Picture
 
-Here is how all 15 steps in the lab connect from start to finish:
+Here is how all 9 stages in the Compute Engine lab connect from start to finish:
 
 1. **Store code centrally**: Put your app code and `startup-script.sh` into a [Cloud Storage](https://cloud.google.com/storage/docs) bucket.
 
@@ -969,7 +967,404 @@ When something does not work in a lab, check this table first:
 | **Load Balancer says `UNHEALTHY`** | The `allow-health-check` firewall rule doesn't cover ports `8080-8082`, the named port doesn't match, or the startup script is still running ([External Application Load Balancer overview](https://cloud.google.com/load-balancing/docs/https)). | `gcloud compute backend-services get-health SERVICE_NAME --global` | 
 | **Autoscaler never adds a 3rd VM** | `--max-num-replicas` was set to `2` (the same as the current size) instead of a higher number ([Managed instance groups](https://cloud.google.com/compute/docs/instance-groups)). | `gcloud compute instance-groups managed describe MIG_NAME --zone=ZONE` | 
 
-## 6. Quick Command Reference
+## 6. Service Accounts, Custom IAM Roles, and CLI Profiles — Deep Dive
+
+This chapter expands on **Chapter 2 (IAM)** with hands-on lab skills: understanding the three kinds of Service Accounts, using a Service Account as both an **Identity** and a **Resource**, switching between multiple `gcloud` user profiles, understanding VM **Access Scopes**, and building **Custom IAM Roles** from scratch.
+
+### 6.1 The Three Types of Service Accounts
+
+A [Service Account](https://docs.cloud.google.com/iam/docs/service-account-overview) is a special Google account made for an application or Virtual Machine (VM) instead of a human user. Every service account is identified by its own unique **email address**.
+
+When you look inside a Google Cloud project, you will see three different categories of service accounts ([Types of service accounts](https://docs.cloud.google.com/iam/docs/service-account-types)):
+
+| Service Account Type | Who Creates & Owns It? | Email Format | Important Details | 
+| ----- | ----- | ----- | ----- | 
+| **1. User-Managed Service Accounts** | Created in your project (includes default service accounts and ones you create yourself) ([Types of service accounts](https://docs.cloud.google.com/iam/docs/service-account-types)). | **Compute Engine default:** `PROJECT_NUMBER-compute@developer.gserviceaccount.com`  **App Engine default:** `PROJECT_ID@appspot.gserviceaccount.com`  **Custom (yours):** `NAME@PROJECT_ID.iam.gserviceaccount.com` | Google automatically creates the Compute Engine and App Engine default service accounts when you enable those APIs. In production, create your own custom service accounts with narrower permissions. | 
+| **2. Google-Managed Service Accounts (Service Agents)** | Created and owned by Google ([Types of service accounts](https://docs.cloud.google.com/iam/docs/service-account-types)). | Various `@*.gserviceaccount.com` emails shown in the IAM page. | Used by Google Cloud services (such as Cloud Build or GKE) to manage resources inside your project on your behalf. | 
+| **3. Google APIs Service Agent** | Created and owned by Google for internal platform operations ([Types of service accounts](https://docs.cloud.google.com/iam/docs/service-account-types)). | `PROJECT_NUMBER@cloudservices.gserviceaccount.com` | Runs internal Google processes on your behalf. It does **not** appear on the Service Accounts page, but it appears on the **IAM** page with the `Editor` role by default, and is only deleted when the project itself is deleted. | 
+
+### 6.2 How a Service Account Can Be Both an Identity AND a Resource
+
+One of the most important concepts in Google Cloud IAM is that a [Service Account](https://docs.cloud.google.com/iam/docs/service-account-overview) wears **two hats**:
+
+1. **Service Account as an Identity (Who)**: When your VM talks to Cloud Storage, the service account is the **user/identity**. You give the service account a role like `roles/storage.admin` on the project so the VM can read and write files.
+
+2. **Service Account as a Resource (What)**: What if you have 10 developers in your project, and only **one** of them should be allowed to attach a high-privilege service account to a VM or start that VM? You treat the service account itself as a **resource**, and grant that developer the **Service Account User** role (`roles/iam.serviceAccountUser`) **on the service account** ([Roles for service account authentication](https://docs.cloud.google.com/iam/docs/service-account-permissions)).
+
+| Scenario | Who Is the Principal (Identity)? | What Role Is Granted? | What Is the Target Resource? | 
+| ----- | ----- | ----- | ----- | 
+| **Let a VM manage Cloud Storage files** | The Service Account (`my-sa-123@...`) | `roles/storage.admin` (Storage Admin) | The Google Cloud Project (`$DEVSHELL_PROJECT_ID`) | 
+| **Let a developer attach that Service Account to a VM** | The human developer (`user:dev@example.com`) | `roles/iam.serviceAccountUser` ([Service Account User](https://docs.cloud.google.com/iam/docs/service-account-permissions)) | The Service Account itself (`my-sa-123@...`) | 
+
+#### Creating a Service Account and Granting It Project Access
+
+```
+# 1. Create a new user-managed service account named 'my-sa-123'
+gcloud iam service-accounts create my-sa-123 \
+  --display-name="my service account"
+
+# 2. Grant the Storage Admin role to your new service account on the current project
+# ($DEVSHELL_PROJECT_ID is a built-in Cloud Shell variable holding your current Project ID)
+gcloud projects add-iam-policy-binding $DEVSHELL_PROJECT_ID \
+  --member="serviceAccount:my-sa-123@$DEVSHELL_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="roles/storage.admin" \
+  --condition=None
+
+```
+
+### 6.3 Linux & Python Commands Used in IAM Labs (`cat`, `echo`, `.bashrc`, and `venv`)
+
+Labs often ask you to run Linux shell commands to inspect configuration files, save variables permanently, or set up a Python environment. Here is what each command does in plain English.
+
+#### 1. What Is the `cat` Command and How Do We Use It?
+
+`cat` (short for **concatenate**) reads a text file and prints its entire contents directly onto your terminal screen. You use `cat` whenever you want to quickly read a file without opening a text editor like `nano`:
+
+```
+# Print the contents of your default gcloud configuration file on the screen
+cat ~/.config/gcloud/configurations/config_default
+
+```
+
+#### 2. What Is the `echo` Command and How Do `>` and `>>` Work?
+
+`echo` simply repeats whatever text or variable you give it. By itself, it prints text to your screen. When you combine `echo` with `>` or `>>`, it writes that text into a file instead:
+
+* **`echo "text" > file.txt` (Single arrow = Overwrite)**: Erases everything currently inside `file.txt` and replaces it with `"text"`.
+
+* **`echo "text" >> file.txt` (Double arrow = Append)**: Keeps everything currently inside `file.txt` and adds `"text"` as a brand-new line at the very bottom.
+
+#### 3. Explaining `echo "export USERID2=student-02-d2a2ec93c80b@qwiklabs.net" >> ~/.bashrc`
+
+Let's break this exact lab command into three simple pieces:
+
+```
+echo "export USERID2=student-02-d2a2ec93c80b@qwiklabs.net" >> ~/.bashrc
+
+```
+
+1. **`export USERID2=student-02-...`**: Creates an environment variable named `USERID2` so you can type `$USERID2` in your `gcloud` commands instead of retyping the long email address every time.
+
+2. **`~/.bashrc`**: A special hidden startup script inside your Linux home folder (`~`). Every time you open a new terminal window (or reconnect via SSH), Linux automatically runs every line inside `~/.bashrc`.
+
+3. **Why use `echo "..." >> ~/.bashrc`?** If you just type `export USERID2=...` in your terminal, Linux forgets `$USERID2` the moment your terminal closes. By appending (`>>`) that `export` command to the bottom of `~/.bashrc`, Linux automatically loads `$USERID2` every time you open a terminal!
+
+```
+# Add the variable to the bottom of ~/.bashrc
+echo "export USERID2=student-02-d2a2ec93c80b@qwiklabs.net" >> ~/.bashrc
+
+# Reload ~/.bashrc right now so $USERID2 works immediately in your current window
+source ~/.bashrc
+
+# Test that Linux remembers the variable
+echo $USERID2
+
+```
+
+#### 4. Setting Up Python and a Virtual Environment (`venv`) on a VM
+
+When running Python scripts that call Google Cloud APIs on a Debian VM, never install packages globally into the operating system's Python setup. Instead, create a **virtual environment (`myvenv`)**—which is a private, isolated folder for your project's Python libraries:
+
+```
+# 1. Update Debian package lists and install Python 3, pip (package installer), and venv
+sudo apt update && sudo apt install -y python3 python3-pip python3-venv
+
+# 2. Create an isolated Python virtual environment in a folder named 'myvenv'
+python3 -m venv myvenv
+
+# 3. Activate the virtual environment (your terminal prompt will now start with '(myvenv)')
+source myvenv/bin/activate
+
+# (To leave the virtual environment later, simply type: deactivate)
+
+```
+
+### 6.4 All Seven Principal Types in Cloud IAM
+
+When you write an IAM rule (`Who` gets `What Role`), the **Principal (Who)** can be any of these seven types ([Roles overview](https://docs.cloud.google.com/iam/docs/roles-overview)):
+
+| Principal Type | What It Represents | Format in `gcloud` (`--member=...`) | 
+| ----- | ----- | ----- | 
+| **1. Google Account** | A single human user with a Gmail or Google-hosted email ([Roles overview](https://docs.cloud.google.com/iam/docs/roles-overview)). | `user:alice@example.com` | 
+| **2. Service Account** | An application or VM workload identity ([Service accounts overview](https://docs.cloud.google.com/iam/docs/service-account-overview)). | `serviceAccount:my-sa@project-id.iam.gserviceaccount.com` | 
+| **3. Google Group** | A mailing-list style group of users and service accounts (great for team permissions—just add/remove people from the group!). | `group:devops-team@example.com` | 
+| **4. Google Workspace Account** | Every user belonging to a company's Google Workspace organization (`@yourcompany.com`). | `domain:yourcompany.com` | 
+| **5. Cloud Identity Domain** | Every user in a company domain managed through Google Cloud Identity (for companies that don't use Gmail/Workspace). | `domain:yourcompany.com` | 
+| **6. `allAuthenticatedUsers`** | Anyone signed into **any** Google account or Service Account on the internet (not just your company!). | `allAuthenticatedUsers` | 
+| **7. `allUsers`** | Everyone on the public internet, including anonymous visitors who aren't signed in at all. | `allUsers` | 
+
+### 6.5 Managing Multiple `gcloud` CLI Profiles (`default` vs. `user2`)
+
+The `gcloud` CLI is part of the **Google Cloud SDK**. When you work inside a VM or on your laptop, `gcloud` saves your active settings (account email, Project ID, default region, and default zone) inside a profile file at `~/.config/gcloud/configurations/config_default`.
+
+In multi-user labs, you often test permissions by switching between **User 1** (`default` profile) and **User 2** (`user2` profile) on the same machine:
+
+```
+# 1. See the active settings (account, project, zone) for your current profile
+gcloud config list
+
+# 2. Change the default zone in your active profile
+gcloud config set compute/zone us-east4-b
+
+# 3. Read the raw configuration file stored on disk
+cat ~/.config/gcloud/configurations/config_default
+
+# 4. Override the default zone for just ONE single command using the --zone flag
+gcloud compute instances create lab-1 --zone=us-central1-f
+
+# 5. Create and log into a brand-new profile (e.g., named 'user2') for a second user
+# (--no-launch-browser gives you a text code/link to copy-paste when running inside an SSH session)
+gcloud init --no-launch-browser
+
+# 6. Switch to the 'user2' profile
+gcloud config configurations activate user2
+
+# 7. Switch back to the original 'default' admin profile anytime
+gcloud config configurations activate default
+
+```
+
+### 6.6 Lab Walkthrough: Cross-Project Roles, `devops` Role, and Service Account Impersonation
+
+In this lab scenario, **User 1 (`default` profile)** is the administrator who grants permissions in a second project (`$PROJECTID2`) to **User 2 (`$USERID2`)** and to a dedicated **`devops` Service Account (`$SA`)**:
+
+```
+# STEP 1: Search built-in roles and inspect what permissions 'compute.instanceAdmin' includes
+gcloud iam roles list | grep "name:"
+gcloud iam roles describe roles/compute.instanceAdmin
+
+# STEP 2: Switch to the admin ('default') profile and inspect the pre-created custom 'devops' role in Project 2
+gcloud config configurations activate default
+gcloud iam roles describe devops --project=$PROJECTID2
+
+# STEP 3: Grant User 2 both the read-only 'Viewer' role AND the custom 'devops' role on Project 2
+# Note: Built-in roles start with 'roles/...', whereas project custom roles use 'projects/PROJECT_ID/roles/ROLE_NAME'
+gcloud projects add-iam-policy-binding $PROJECTID2 \
+  --member="user:$USERID2" \
+  --role="roles/viewer"
+
+gcloud projects add-iam-policy-binding $PROJECTID2 \
+  --member="user:$USERID2" \
+  --role="projects/$PROJECTID2/roles/devops" \
+  --condition=None
+
+# STEP 4: Allow User 2 to create VMs that use Project 2's Compute Engine default service account
+# First, dynamically look up Project 2's project number to build its default service account email:
+export COMPUTE_SA2=$(gcloud projects describe $PROJECTID2 --format="value(projectNumber)")-compute@developer.gserviceaccount.com
+
+# Next, grant 'roles/iam.serviceAccountUser' to User 2 ON that default service account:
+gcloud iam service-accounts add-iam-policy-binding $COMPUTE_SA2 \
+  --project=$PROJECTID2 \
+  --member="user:$USERID2" \
+  --role="roles/iam.serviceAccountUser"
+
+```
+
+#### Creating a VM That Runs as the `devops` Service Account
+
+Now let's find the service account whose display name is `devops`, give it permission to manage VMs in `$PROJECTID2`, and create a new VM (`lab-3`) that runs as that service account ([Create a VM that uses a user-managed service account](https://docs.cloud.google.com/compute/docs/access/create-enable-service-accounts-for-instances)):
+
+```
+# 1. List service accounts matching displayName 'devops' and store its email in $SA
+gcloud iam service-accounts list --project=$PROJECTID2 --filter="displayName=devops"
+SA=$(gcloud iam service-accounts list --project=$PROJECTID2 --format="value(email)" --filter="displayName=devops")
+
+# 2. Allow the 'devops' service account ($SA) to act as the default Compute Engine service account
+gcloud iam service-accounts add-iam-policy-binding $COMPUTE_SA2 \
+  --project=$PROJECTID2 \
+  --member="serviceAccount:$SA" \
+  --role="roles/iam.serviceAccountUser"
+
+# 3. Grant the 'devops' service account ($SA) permission to create and manage VMs in Project 2
+gcloud projects add-iam-policy-binding $PROJECTID2 \
+  --member="serviceAccount:$SA" \
+  --role="roles/compute.instanceAdmin" \
+  --condition=None
+
+# 4. Create VM 'lab-3' attached to the 'devops' service account ($SA)
+gcloud compute instances create lab-3 \
+  --project=$PROJECTID2 \
+  --zone=us-east4-b \
+  --machine-type=e2-standard-2 \
+  --service-account=$SA \
+  --scopes="https://www.googleapis.com/auth/compute"
+
+```
+
+### 6.7 Access Scopes vs. IAM Roles on Compute Engine VMs
+
+When you look at `--scopes="https://www.googleapis.com/auth/compute"` in the command above, you might wonder: *Why do we set `--scopes` if we already gave the Service Account an IAM Role?*
+
+Here is the simple truth about [Access Scopes](https://docs.cloud.google.com/compute/docs/access/service-accounts):
+
+* **What Access Scopes are**: Access scopes are an older, **legacy method** from before Cloud IAM existed. They set a maximum cap on which OAuth scopes the `gcloud` CLI and client libraries inside that VM are allowed to request.
+
+* **What Access Scopes are NOT**: They are **not** a security mechanism, and they have zero effect on requests that do not use OAuth (such as gRPC calls or `SignBlob` requests) ([Service accounts on Compute Engine](https://docs.cloud.google.com/compute/docs/access/service-accounts)).
+
+* **Three gates must align**: Even if you give a VM a Cloud Storage access scope, the VM still cannot use Cloud Storage unless **(1)** the Cloud Storage API is enabled on the project, **(2)** the VM's access scope allows Storage, AND **(3)** the VM's Service Account holds a Cloud Storage IAM role!
+
+* **Google's Golden Best Practice**: When creating VMs with a custom Service Account, always set the broad `--scopes=cloud-platform` (`https://www.googleapis.com/auth/cloud-platform`) scope on the VM, and control exact permissions purely through **IAM Roles** on the Service Account ([Service accounts on Compute Engine](https://docs.cloud.google.com/compute/docs/access/service-accounts)).
+
+### 6.8 Deep Dive: Cloud IAM Permissions and Custom Roles
+
+#### How Permissions Are Named (`<service>.<resource>.<verb>`)
+
+In Cloud IAM, you can never grant a single raw permission directly to a user—you always put permissions inside a **Role** and grant the role ([Roles overview](https://docs.cloud.google.com/iam/docs/roles-overview)).
+
+Every permission in Google Cloud follows a three-part naming pattern that matches the underlying REST API method:
+
+**`service.resource.verb`**
+
+| Permission Name | Service | Resource | Verb (Action) | What It Allows | 
+| ----- | ----- | ----- | ----- | ----- | 
+| `compute.instances.list` | `compute` | `instances` | `list` | See the list of VMs in a project. | 
+| `compute.instances.stop` | `compute` | `instances` | `stop` | Shut down a running VM. | 
+| `pubsub.topics.publish` | `pubsub` | `topics` | `publish` | Send a message to a Pub/Sub topic (`topic.publish()`). | 
+| `storage.buckets.get` | `storage` | `buckets` | `get` | Read metadata about a Cloud Storage bucket. | 
+
+#### Predefined Roles vs. Custom Roles: Who Maintains Them?
+
+| Feature | Predefined Roles | Custom Roles | 
+| ----- | ----- | ----- | 
+| **Who creates them?** | Google Cloud ([Roles overview](https://docs.cloud.google.com/iam/docs/roles-overview)). | You (at the **Project** or **Organization** level; cannot be created at the Folder level) ([Create and manage custom roles](https://docs.cloud.google.com/iam/docs/creating-custom-roles)). | 
+| **What happens when Google launches new permissions?** | Google **automatically** updates predefined roles with the new permissions. | **Not updated automatically.** You must manually add new permissions if you want them in your custom role ([Roles overview](https://docs.cloud.google.com/iam/docs/roles-overview)). | 
+| **Where can the role be used?** | Across any Google Cloud project or organization. | **Only** inside the exact Project or Organization where the custom role was created ([Roles overview](https://docs.cloud.google.com/iam/docs/roles-overview)). | 
+
+#### Who Has Permission to Create Custom Roles?
+
+To create a custom role, your account must have the `iam.roles.create` permission ([Create and manage custom roles](https://docs.cloud.google.com/iam/docs/creating-custom-roles)):
+
+* **Project Owner (`roles/owner`)**: Can create custom roles inside that project.
+
+* **IAM Role Administrator (`roles/iam.roleAdmin`)**: Can create and manage custom roles at the project level.
+
+* **Organization Role Administrator (`roles/iam.organizationRoleAdmin`)**: Required (even for Organization Admins!) to create custom roles at the Organization level.
+
+* **IAM Security Reviewer (`roles/iam.securityReviewer`)**: Can **view** custom roles to audit security, but cannot create or edit them.
+
+#### Step 1: Inspect Available Permissions and Roles Before Building
+
+Before creating a custom role, check which permissions can be used on your project:
+
+```
+# List all permissions that can be tested/granted on your project
+gcloud iam list-testable-permissions \
+  //cloudresourcemanager.googleapis.com/projects/$DEVSHELL_PROJECT_ID
+
+# List all roles (predefined and custom) that can be granted on your project
+gcloud iam list-grantable-roles \
+  //cloudresourcemanager.googleapis.com/projects/$DEVSHELL_PROJECT_ID
+
+# Inspect the exact permissions inside any existing role
+gcloud iam roles describe roles/compute.instanceAdmin
+
+```
+
+#### Step 2: Create a Custom Role (Two Methods: YAML File vs. Command Flags)
+
+You can create a custom role either by writing a clean **YAML file** (recommended for source control) or by passing **command-line flags** ([Create and manage custom roles](https://docs.cloud.google.com/iam/docs/creating-custom-roles)):
+
+**Method A — Using a YAML file (`role-definition.yaml`):**
+
+Create `role-definition.yaml` (`nano role-definition.yaml`):
+
+```
+title: "Role Editor"
+description: "Custom role for editing instance and storage resources"
+stage: "ALPHA"
+includedPermissions:
+- compute.instances.get
+- compute.instances.list
+
+```
+
+Then run:
+
+```
+# Create the custom role named 'editor' from the YAML file
+gcloud iam roles create editor \
+  --project=$DEVSHELL_PROJECT_ID \
+  --file=role-definition.yaml
+
+```
+
+**Method B — Using CLI Flags in a Single Command:**
+
+```
+# Create a custom role named 'viewer' directly with flags
+gcloud iam roles create viewer \
+  --project=$DEVSHELL_PROJECT_ID \
+  --title="Role Viewer" \
+  --description="Custom role description." \
+  --permissions="compute.instances.get,compute.instances.list" \
+  --stage=ALPHA
+
+# List all custom roles created in your project
+gcloud iam roles list --project=$DEVSHELL_PROJECT_ID
+
+```
+
+#### Step 3: Update a Custom Role and Understand `etag` Concurrency
+
+What if two administrators try to edit the `editor` custom role at the exact same second? To prevent one admin from accidentally wiping out the other admin's changes, Cloud IAM uses an **`etag`** (a version fingerprint string) ([Create and manage custom roles](https://docs.cloud.google.com/iam/docs/creating-custom-roles)):
+
+1. First, you run `gcloud iam roles describe editor --project=$DEVSHELL_PROJECT_ID` to see its current permissions and current `etag` value.
+
+2. When you update the role with a YAML file containing that `etag`, Cloud IAM checks if the `etag` still matches. If someone else modified the role in the meantime, the `etag` won't match and IAM safely blocks the overwrite!
+
+You can update a custom role either with a YAML file or with `--add-permissions` / `--remove-permissions` flags:
+
+```
+# Method A: Update a custom role using an updated YAML file (which includes the etag)
+gcloud iam roles update editor \
+  --project=$DEVSHELL_PROJECT_ID \
+  --file=new-role-definition.yaml
+
+# Method B: Quickly add or remove permissions using flags
+gcloud iam roles update viewer \
+  --project=$DEVSHELL_PROJECT_ID \
+  --add-permissions="storage.buckets.get,storage.buckets.list"
+
+gcloud iam roles update viewer \
+  --project=$DEVSHELL_PROJECT_ID \
+  --remove-permissions="storage.buckets.list"
+
+```
+
+#### Step 4: Disable, Delete, and Undelete a Custom Role (The 37-Day Timeline)
+
+* **Disabling a role (`--stage=DISABLED`)**: Turns the role off immediately. Any user assigned that role loses its permissions right away, but the role stays in your list so you can re-enable it anytime ([Create and manage custom roles](https://docs.cloud.google.com/iam/docs/creating-custom-roles)).
+
+* **Deleting a role (`gcloud iam roles delete`)**: Starts a **37-day deletion timeline** ([Create and manage custom roles](https://docs.cloud.google.com/iam/docs/creating-custom-roles)):
+
+| Time Window After Deletion | What Happens to the Custom Role? | Can You Undelete It? | Can You Reuse the Same Role ID? | 
+| ----- | ----- | ----- | ----- | 
+| **Days 1 to 7 (7-Day Grace Period)** | The role is inactive (permissions stop working), but it is kept in a recoverable state ([Create and manage custom roles](https://docs.cloud.google.com/iam/docs/creating-custom-roles)). | **Yes**, using `gcloud iam roles undelete`. | No. | 
+| **Days 8 to 37 (30-Day Purge Window)** | The role is permanently being wiped from Google Cloud systems ([Create and manage custom roles](https://docs.cloud.google.com/iam/docs/creating-custom-roles)). | **No.** It can never be restored after Day 7. | No (the Role ID is still locked). | 
+| **After Day 37 (Day 38+)** | The role is completely gone ([Create and manage custom roles](https://docs.cloud.google.com/iam/docs/creating-custom-roles)). | No. | **Yes!** You can now create a brand-new role with the same Role ID (`viewer`). | 
+
+```
+# 1. Disable a custom role without deleting it
+gcloud iam roles update viewer \
+  --project=$DEVSHELL_PROJECT_ID \
+  --stage=DISABLED
+
+# 2. Delete a custom role
+gcloud iam roles delete viewer \
+  --project=$DEVSHELL_PROJECT_ID
+
+# 3. View custom roles including deleted ones
+gcloud iam roles list \
+  --project=$DEVSHELL_PROJECT_ID \
+  --show-deleted
+
+# 4. Restore (undelete) the custom role within the 7-day grace window
+gcloud iam roles undelete viewer \
+  --project=$DEVSHELL_PROJECT_ID
+
+```
+
+## 7. Quick Command Reference
 
 | What You Want to Do | Command to Run | 
 | ----- | ----- | 
@@ -977,12 +1372,18 @@ When something does not work in a lab, check this table first:
 | **Check current Project ID** | `gcloud config get-value project` | 
 | **Switch to another Project ID** | `gcloud config set project PROJECT_ID` | 
 | **Set default zone and region** | `gcloud config set compute/zone ZONE` and `gcloud config set compute/region REGION` | 
+| **Create or switch `gcloud` user profile** | `gcloud init --no-launch-browser` and `gcloud config configurations activate PROFILE_NAME` | 
 | **Turn on an API** | `gcloud services enable compute.googleapis.com` | 
 | **Give a user Viewer access** | `gcloud projects add-iam-policy-binding PROJECT_ID --member="user:EMAIL" --role="roles/viewer"` | 
 | **Create a Service Account** | `gcloud iam service-accounts create SA_NAME --display-name="NAME"` | 
+| **Grant Service Account User role on a SA** | `gcloud iam service-accounts add-iam-policy-binding SA_EMAIL --member="user:EMAIL" --role="roles/iam.serviceAccountUser"` | 
+| **List testable permissions on a project** | `gcloud iam list-testable-permissions //cloudresourcemanager.googleapis.com/projects/PROJECT_ID` | 
+| **Create a custom IAM role (flags)** | `gcloud iam roles create ROLE_ID --project=PROJECT_ID --title="TITLE" --permissions="PERM1,PERM2" --stage=ALPHA` | 
+| **Add permissions to a custom role** | `gcloud iam roles update ROLE_ID --project=PROJECT_ID --add-permissions="PERM1,PERM2"` | 
+| **Disable / Delete / Undelete a custom role** | `gcloud iam roles update ROLE_ID --project=PROJECT_ID --stage=DISABLED` / `delete` / `undelete` | 
 | **Create a Pub/Sub topic & subscription** | `gcloud pubsub topics create TOPIC` and `gcloud pubsub subscriptions create SUB --topic=TOPIC` | 
 | **List all VMs** | `gcloud compute instances list` | 
-| **Create a basic Debian VM** | `gcloud compute instances create VM_NAME --zone=ZONE --machine-type=e2-medium --image-family=debian-12 --image-project=debian-cloud` | 
+| **Create a VM with a custom Service Account** | `gcloud compute instances create VM_NAME --zone=ZONE --service-account=SA_EMAIL --scopes=cloud-platform` | 
 | **SSH into a VM** | `gcloud compute ssh VM_NAME --zone=ZONE` | 
 | **Stop / Start a VM** | `gcloud compute instances stop VM_NAME --zone=ZONE` / `gcloud compute instances start VM_NAME --zone=ZONE` | 
 | **Create & attach a Persistent Disk** | `gcloud compute disks create DISK --size=200GB --zone=ZONE` and `gcloud compute instances attach-disk VM_NAME --disk=DISK --zone=ZONE` | 
@@ -992,7 +1393,21 @@ When something does not work in a lab, check this table first:
 | **Set Named Ports on a MIG** | `gcloud compute instance-groups set-named-ports MIG --zone=ZONE --named-ports=orders:8081,products:8082` | 
 | **Check Load Balancer backend health** | `gcloud compute backend-services get-health BACKEND_SERVICE --global` | 
 
-## 7. Official Google Cloud Documentation Links
+## 8. Official Google Cloud Documentation Links
+
+* [Service Accounts Overview](https://docs.cloud.google.com/iam/docs/service-account-overview)
+
+* [Types of Service Accounts](https://docs.cloud.google.com/iam/docs/service-account-types)
+
+* [Roles for Service Account Authentication (`serviceAccountUser`)](https://docs.cloud.google.com/iam/docs/service-account-permissions)
+
+* [Cloud IAM Roles Overview](https://docs.cloud.google.com/iam/docs/roles-overview)
+
+* [Create and Manage Custom IAM Roles](https://docs.cloud.google.com/iam/docs/creating-custom-roles)
+
+* [Service Accounts and Access Scopes on Compute Engine](https://docs.cloud.google.com/compute/docs/access/service-accounts)
+
+* [Create a VM That Uses a User-Managed Service Account](https://docs.cloud.google.com/compute/docs/access/create-enable-service-accounts-for-instances)
 
 * [Compute Engine Overview](https://cloud.google.com/compute/docs/overview)
 
