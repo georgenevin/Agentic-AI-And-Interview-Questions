@@ -64,6 +64,7 @@ Sentiment:
 """
 
 
+
 ```
 
 ## 3. Google Gen AI SDK Setup & API Services
@@ -99,6 +100,7 @@ client = genai.Client(
 MODEL_ID = "gemini-2.5-flash"  # Replace with your target Gemini model ID
 
 
+
 ```
 
 ## 4. Generating Text & Multimodal Content
@@ -113,6 +115,7 @@ response = client.models.generate_content(
     contents="What's the largest planet in our solar system?",
 )
 print(response.text)
+
 
 
 ```
@@ -159,6 +162,7 @@ response = client.models.generate_content(
     ],
 )
 print(response.text)
+
 
 
 ```
@@ -214,6 +218,7 @@ response = client.models.generate_content(
 print(response.text)
 
 
+
 ```
 
 ## 6. Safety Filters & Guardrails
@@ -263,6 +268,7 @@ response = client.models.generate_content(
 print(response.text)
 
 
+
 ```
 
 ## 7. Controlled Generation (Structured JSON Output)
@@ -296,6 +302,7 @@ response = client.models.generate_content(
     ),
 )
 print(response.text)
+
 
 
 ```
@@ -342,6 +349,7 @@ response = client.models.generate_content(
 print(response.text)
 
 
+
 ```
 
 ## 8. Streaming, Async Requests, and Token Counting
@@ -358,6 +366,7 @@ for chunk in client.models.generate_content_stream(
     print(chunk.text, end="")
 
 
+
 ```
 
 ### Asynchronous Requests (`client.aio`)
@@ -370,6 +379,7 @@ response = await client.aio.models.generate_content(
     contents="Compose a song about a time-traveling squirrel.",
 )
 print(response.text)
+
 
 
 ```
@@ -397,6 +407,7 @@ compute_resp = client.models.compute_tokens(
     contents="What's the longest word in the English language?",
 )
 print(compute_resp)
+
 
 
 ```
@@ -444,6 +455,7 @@ response = client.models.generate_content(
 
 # Inspect the function call suggested by the model
 print(response.function_calls[0])
+
 
 
 ```
@@ -501,6 +513,7 @@ print(response.text)
 client.caches.delete(name=cached_content.name)
 
 
+
 ```
 
 ## 11. Text Embeddings
@@ -528,6 +541,7 @@ for embedding in response.embeddings:
     print(f"Vector length: {len(embedding.values)}, first 5 values: {embedding.values[:5]}")
 
 
+
 ```
 
 ## 12. Notebook Display Helpers: `display(Markdown(response.text))`
@@ -553,6 +567,7 @@ response = client.models.generate_content(
 
 # Clean formatted output in Jupyter / Colab
 display(Markdown(response.text))
+
 
 ```
 
@@ -600,6 +615,7 @@ contents = [
 
 response = client.models.generate_content(model=MODEL_ID, contents=contents)
 display(Markdown(response.text))
+
 
 ```
 
@@ -670,6 +686,7 @@ response = chat.send_message(
 
 display(Markdown(response.text))
 
+
 ```
 
 ## 15. Calling Gemini via REST API (`curl`) & Understanding the Response
@@ -694,6 +711,7 @@ cat > request.json << 'EOF'
 }
 EOF
 
+
 ```
 
 ### Step 2: Send the `curl` Request
@@ -706,6 +724,7 @@ curl -X POST \
   -H "Content-Type: application/json; charset=utf-8" \
   -d @request.json \
   "https://${API_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL_ID}:generateContent"
+
 
 ```
 
@@ -724,8 +743,6 @@ Instead of memorizing the raw JSON, know what each key in the response represent
 | `usageMetadata.totalTokenCount` | Total tokens billed (`prompt + candidates + thoughts`). | 
 | `usageMetadata.trafficType` | How the request was served (e.g., `ON_DEMAND`). | 
 
----
-
 ## 16. Gemini Enterprise — Apps, Data Stores, Pre-Built Agents & NotebookLM
 
 **Gemini Enterprise** lets organizations build a centralized, secure AI workspace for employees—connecting company data sources, pre-built AI agents, and NotebookLM under one roof.
@@ -733,35 +750,76 @@ Instead of memorizing the raw JSON, know what each key in the response represent
 ### 16.1 Creating an App & Configuring Workforce Identity
 
 * **Create the app:** Search for **Gemini Enterprise** in the Google Cloud Console, click **Create your first app**, give it a name (e.g., *Symbol Foods Marketing Team*), and click **Create**.
+
 * **Set up identity:** Before sharing the app, click **Setup identity**, select **Google Identity** as the identity provider, and click **Confirm Workforce Identity**.
+
 * **Share the app:** Copy the unique app URL from the **Overview** page to open the workspace and share it with your team.
 
 ### 16.2 Connecting Data Stores
 
 From **Connected data stores** → **New data store**, you can ground Gemini Enterprise in your organization's internal data:
 
-| Data Store | Key Configuration Steps |
-| :--- | :--- |
-| **Google Drive** | Select the Google Drive card → choose to sync all organization **Shared Drives** → name the store → **Create**. |
-| **Google Calendar** | Select the Google Calendar connector → name the connector → **Create**. |
-| **Google Cloud Storage** | Select Cloud Storage → choose **Documents** as the data type (for unstructured files like `PDF`, `HTML`, `TXT`) → set sync frequency (e.g., **One time** for single-batch import) → browse and select the GCS bucket → name the store → **Create**. |
+| Data Store | Key Configuration Steps | 
+| ----- | ----- | 
+| **Google Drive** | Select the Google Drive card → choose to sync all organization **Shared Drives** → name the store → **Create**. | 
+| **Google Calendar** | Select the Google Calendar connector → name the connector → **Create**. | 
+| **Google Cloud Storage** | Select Cloud Storage → choose **Documents** as the data type (for unstructured files like `PDF`, `HTML`, `TXT`) → set sync frequency (e.g., **One time** for single-batch import) → browse and select the GCS bucket → name the store → **Create**. | 
 
 ### 16.3 Search Modes, Media Tools & Multimodal Prompting
 
 * **Hybrid Internal + External Search:** By default, prompts on the Gemini Enterprise homepage search across both your connected **internal** data stores and **external** sources to give context-aware answers.
+
 * **Enhance your conversation:** Use this menu to change search parameters (such as restricting search to **internal sources only**) or access built-in media tools like **Veo** (video generation) and **Nano Banana** (image generation).
+
 * **Multimodal Prompts:** You can ask questions about visual elements inside your internal documents (e.g., *"Summarize the customer sentiment pie chart"*).
 
 ### 16.4 Pre-Built Agents
 
 * **Idea Generation Agent:** Uses a team of AI agents to plan, brainstorm, and evaluate ideas.
+
   * *Workflow:* Enter your goal → review the generated plan → click **Start session** → review multiple generated ideas.
+
 * **Deep Research Agent:** Conducts in-depth analysis and produces comprehensive reports on complex topics.
+
   * *Workflow:* Enter your research prompt → review and edit the drafted research plan → click **Start research** → receive a **full written report** and an **audio summary**.
 
 ### 16.5 NotebookLM & Studio
 
 * **Create a Notebook:** Open **NotebookLM** from the pin section and select **Create new notebook**.
+
 * **Mix Diverse Sources:** Add **Google Docs, website URLs, YouTube videos, copied text, or uploaded local files** as grounding sources.
+
 * **Source-Grounded Q&A & Notes:** Ask questions answered strictly from your uploaded sources and **save useful responses as notes** for later access.
+
 * **Studio Tab:** Transform your source content into dynamic formats, including **audio overviews, video presentations, mind maps, and structured reports**.
+
+---
+
+## 17. Multi-Agent Workflows in Gemini Enterprise (End-to-End Example)
+
+In **Gemini Enterprise**, you can chain multiple specialized agents together in one conversation—using **`@` mentions** to switch agents—to complete an entire business workflow from research to media creation to external task automation.
+
+### Agent Roles at a Glance
+
+| Agent | Role in the Workflow | Key Output |
+| :--- | :--- | :--- |
+| **Deep Research** | Analyzes both **first-party (internal)** and **third-party (external)** data. | Editable research plan + cited strategy report. |
+| **Marketing Agent** | Generates and tweaks **static display ad images** from product catalog assets. | Updated ad image link + creative rationale. |
+| **AdGen Agent** | Builds **video ad storylines and clips** tailored to target demographics. | Storyline draft + generated video clips. |
+| **The Analyst** | Automates actions in connected **external systems** (e.g., ServiceNow). | Created ticket + direct link to review it. |
+
+### Step-by-Step Multi-Agent Workflow
+
+* **1. Run Research (Deep Research Agent):**
+  * Select **Deep Research** from the agent menu and write a prompt specifying your **persona**, **internal data** (sales history, past campaign reports), and **external data** (market/fashion trends).
+  * Review and adjust the drafted **research plan**, then click **Start research**.
+  * Review the final report and hover over citations to verify both **first-party and third-party sources** behind the recommendation.
+* **2. Pull Catalog Assets & Create Display Ads (`@Marketing Agent`):**
+  * Ask the chat to list product names and image links from your internal catalog.
+  * Type **`@`** in the chat box to select the **Marketing Agent** and ask it to adapt an existing product image (e.g., keeping the same person and jacket with a new sunset background).
+* **3. Generate Video Ads (`@AdGen Agent`):**
+  * Type **`@`** to select the **AdGen Agent** and provide structured campaign inputs (**brand, product, target location, age, gender, and interests**).
+  * Review and refine the proposed **video storyline** (visuals and theme), then confirm so the agent generates the starter video clips.
+* **4. Automate External Follow-Up (`@The Analyst`):**
+  * Close the previous agent using the **exit button** in the agent window, type **`@`**, and select **The Analyst** agent.
+  * Prompt it to automate a business action in a connected third-party tool—such as creating a **ServiceNow ticket** with the campaign summary for another team—and open the returned link to verify it.
