@@ -63,6 +63,7 @@ Tweet: Something surprised me about this video - it was actually original. Watch
 Sentiment:
 """
 
+
 ```
 
 ## 3. Google Gen AI SDK Setup & API Services
@@ -97,6 +98,7 @@ client = genai.Client(
 
 MODEL_ID = "gemini-2.5-flash"  # Replace with your target Gemini model ID
 
+
 ```
 
 ## 4. Generating Text & Multimodal Content
@@ -111,6 +113,7 @@ response = client.models.generate_content(
     contents="What's the largest planet in our solar system?",
 )
 print(response.text)
+
 
 ```
 
@@ -156,6 +159,7 @@ response = client.models.generate_content(
     ],
 )
 print(response.text)
+
 
 ```
 
@@ -209,6 +213,7 @@ response = client.models.generate_content(
 )
 print(response.text)
 
+
 ```
 
 ## 6. Safety Filters & Guardrails
@@ -257,6 +262,7 @@ response = client.models.generate_content(
 )
 print(response.text)
 
+
 ```
 
 ## 7. Controlled Generation (Structured JSON Output)
@@ -290,6 +296,7 @@ response = client.models.generate_content(
     ),
 )
 print(response.text)
+
 
 ```
 
@@ -334,6 +341,7 @@ response = client.models.generate_content(
 )
 print(response.text)
 
+
 ```
 
 ## 8. Streaming, Async Requests, and Token Counting
@@ -349,6 +357,7 @@ for chunk in client.models.generate_content_stream(
 ):
     print(chunk.text, end="")
 
+
 ```
 
 ### Asynchronous Requests (`client.aio`)
@@ -361,6 +370,7 @@ response = await client.aio.models.generate_content(
     contents="Compose a song about a time-traveling squirrel.",
 )
 print(response.text)
+
 
 ```
 
@@ -387,6 +397,7 @@ compute_resp = client.models.compute_tokens(
     contents="What's the longest word in the English language?",
 )
 print(compute_resp)
+
 
 ```
 
@@ -433,6 +444,7 @@ response = client.models.generate_content(
 
 # Inspect the function call suggested by the model
 print(response.function_calls[0])
+
 
 ```
 
@@ -488,6 +500,7 @@ print(response.text)
 # 3. Clean up the cache when done
 client.caches.delete(name=cached_content.name)
 
+
 ```
 
 ## 11. Text Embeddings
@@ -514,20 +527,20 @@ response = client.models.embed_content(
 for embedding in response.embeddings:
     print(f"Vector length: {len(embedding.values)}, first 5 values: {embedding.values[:5]}")
 
-```
 
----
+```
 
 ## 12. Notebook Display Helpers: `display(Markdown(response.text))`
 
 By default, Gemini returns its answers formatted in **Markdown** (using `**bold**`, `### headings`, bullet lists, and tables).
 
-- If you use `print(response.text)`, Python prints the raw symbols (`**`, `###`).
-- If you use `display(Markdown(response.text))` inside a **Jupyter or Google Colab notebook**, it converts that raw Markdown into clean, formatted rich text (real headings, bold text, and bullet points).
+* If you use `print(response.text)`, Python prints the raw symbols (`**`, `###`).
+
+* If you use `display(Markdown(response.text))` inside a **Jupyter or Google Colab notebook**, it converts that raw Markdown into clean, formatted rich text (real headings, bold text, and bullet points).
 
 ### Code Example: `print()` vs. `display(Markdown())`
 
-```python
+```
 from IPython.display import Markdown, display
 
 response = client.models.generate_content(
@@ -540,21 +553,22 @@ response = client.models.generate_content(
 
 # Clean formatted output in Jupyter / Colab
 display(Markdown(response.text))
-```
 
----
+```
 
 ## 13. Combining Multiple Modalities (Video + Image + Text)
 
 You can combine **multiple media types** (such as a video, an image, and a text prompt) in a single `contents` list. Gemini can watch the video, look at the image, and cross-reference them together.
 
-- **Prerequisite:** To use Agent Platform, you must have an existing **Google Cloud project** and **enable the Agent Platform (Vertex AI) API**.
-- **Notebook Packages:** `%pip install --upgrade --quiet google-genai google-auth pandas`
-- **Why `Part.from_uri()`?** It lets Gemini read large media files directly from **Google Cloud Storage (`gs://...`)** without downloading them to your local machine.
+* **Prerequisite:** To use Agent Platform, you must have an existing **Google Cloud project** and **enable the Agent Platform (Vertex AI) API**.
+
+* **Notebook Packages:** `%pip install --upgrade --quiet google-genai google-auth pandas`
+
+* **Why `Part.from_uri()`?** It lets Gemini read large media files directly from **Google Cloud Storage (`gs://...`)** without downloading them to your local machine.
 
 ### Code Example: Finding an Image Moment Inside a Video
 
-```python
+```
 from IPython.display import Image, Markdown, Video, display
 from google.genai.types import Part
 
@@ -586,9 +600,8 @@ contents = [
 
 response = client.models.generate_content(model=MODEL_ID, contents=contents)
 display(Markdown(response.text))
-```
 
----
+```
 
 ## 14. Multi-Turn Function Calling with Chat (`Part.from_function_response`)
 
@@ -597,13 +610,16 @@ In Section 9, you saw how Gemini suggests a single function call. In real-world 
 ### How the Full Loop Works
 
 1. **Create a chat with tools:** Pass your `Tool` (containing one or more `FunctionDeclaration`s) and set `temperature=0` so parameter extraction is predictable and reliable.
+
 2. **Gemini requests function calls:** When the user asks a question, Gemini replies with which function(s) to call and what arguments to use.
+
 3. **Your app runs the APIs:** Your Python code executes the actual backend functions (e.g., `get_product_info`, `get_store_location`).
+
 4. **Send results back with `Part.from_function_response`:** Pass the API outputs back into `chat.send_message(...)` so Gemini can read the real data and write the final answer for the user.
 
 ### Code Example: Retail Assistant Chat Loop
 
-```python
+```
 from IPython.display import Markdown, display
 from google.genai.types import FunctionDeclaration, GenerateContentConfig, Part, Tool
 
@@ -653,9 +669,8 @@ response = chat.send_message(
 )
 
 display(Markdown(response.text))
-```
 
----
+```
 
 ## 15. Calling Gemini via REST API (`curl`) & Understanding the Response
 
@@ -663,7 +678,7 @@ Sometimes you need to test or call Gemini directly over HTTP without Python—fo
 
 ### Step 1: Create the JSON Request Payload
 
-```bash
+```
 cat > request.json << 'EOF'
 {
   "contents": [
@@ -678,31 +693,75 @@ cat > request.json << 'EOF'
   ]
 }
 EOF
+
 ```
 
 ### Step 2: Send the `curl` Request
 
 Use `gcloud auth print-access-token` to authenticate with your Google Cloud credentials:
 
-```bash
+```
 curl -X POST \
   -H "Authorization: Bearer $(gcloud auth print-access-token)" \
   -H "Content-Type: application/json; charset=utf-8" \
   -d @request.json \
   "https://${API_ENDPOINT}/v1/projects/${PROJECT_ID}/locations/${LOCATION}/publishers/google/models/${MODEL_ID}:generateContent"
+
 ```
 
 ### Step 3: Understanding the JSON Response Fields
 
 Instead of memorizing the raw JSON, know what each key in the response represents for debugging, cost tracking, and certification exams:
 
-| JSON Field | What It Means (Simple English) |
+| JSON Field | What It Means (Simple English) | 
+| ----- | ----- | 
+| `candidates[0].content.parts[0].text` | The actual answer generated by the model (in Markdown). | 
+| `thoughtSignature` | An encrypted internal token used by thinking models to preserve reasoning state across multi-turn or tool-calling requests. | 
+| `finishReason` | Why the model stopped generating (`STOP` = completed normally; `MAX_TOKENS` = hit token limit; `SAFETY` = blocked by safety filter). | 
+| `usageMetadata.promptTokenCount` | Number of tokens in your input prompt. | 
+| `usageMetadata.candidatesTokenCount` | Number of tokens in the model's visible reply. | 
+| `usageMetadata.thoughtsTokenCount` | Number of internal reasoning tokens used by a thinking model. | 
+| `usageMetadata.totalTokenCount` | Total tokens billed (`prompt + candidates + thoughts`). | 
+| `usageMetadata.trafficType` | How the request was served (e.g., `ON_DEMAND`). | 
+
+---
+
+## 16. Gemini Enterprise — Apps, Data Stores, Pre-Built Agents & NotebookLM
+
+**Gemini Enterprise** lets organizations build a centralized, secure AI workspace for employees—connecting company data sources, pre-built AI agents, and NotebookLM under one roof.
+
+### 16.1 Creating an App & Configuring Workforce Identity
+
+* **Create the app:** Search for **Gemini Enterprise** in the Google Cloud Console, click **Create your first app**, give it a name (e.g., *Symbol Foods Marketing Team*), and click **Create**.
+* **Set up identity:** Before sharing the app, click **Setup identity**, select **Google Identity** as the identity provider, and click **Confirm Workforce Identity**.
+* **Share the app:** Copy the unique app URL from the **Overview** page to open the workspace and share it with your team.
+
+### 16.2 Connecting Data Stores
+
+From **Connected data stores** → **New data store**, you can ground Gemini Enterprise in your organization's internal data:
+
+| Data Store | Key Configuration Steps |
 | :--- | :--- |
-| `candidates[0].content.parts[0].text` | The actual answer generated by the model (in Markdown). |
-| `thoughtSignature` | An encrypted internal token used by thinking models to preserve reasoning state across multi-turn or tool-calling requests. |
-| `finishReason` | Why the model stopped generating (`STOP` = completed normally; `MAX_TOKENS` = hit token limit; `SAFETY` = blocked by safety filter). |
-| `usageMetadata.promptTokenCount` | Number of tokens in your input prompt. |
-| `usageMetadata.candidatesTokenCount` | Number of tokens in the model's visible reply. |
-| `usageMetadata.thoughtsTokenCount` | Number of internal reasoning tokens used by a thinking model. |
-| `usageMetadata.totalTokenCount` | Total tokens billed (`prompt + candidates + thoughts`). |
-| `usageMetadata.trafficType` | How the request was served (e.g., `ON_DEMAND`). |
+| **Google Drive** | Select the Google Drive card → choose to sync all organization **Shared Drives** → name the store → **Create**. |
+| **Google Calendar** | Select the Google Calendar connector → name the connector → **Create**. |
+| **Google Cloud Storage** | Select Cloud Storage → choose **Documents** as the data type (for unstructured files like `PDF`, `HTML`, `TXT`) → set sync frequency (e.g., **One time** for single-batch import) → browse and select the GCS bucket → name the store → **Create**. |
+
+### 16.3 Search Modes, Media Tools & Multimodal Prompting
+
+* **Hybrid Internal + External Search:** By default, prompts on the Gemini Enterprise homepage search across both your connected **internal** data stores and **external** sources to give context-aware answers.
+* **Enhance your conversation:** Use this menu to change search parameters (such as restricting search to **internal sources only**) or access built-in media tools like **Veo** (video generation) and **Nano Banana** (image generation).
+* **Multimodal Prompts:** You can ask questions about visual elements inside your internal documents (e.g., *"Summarize the customer sentiment pie chart"*).
+
+### 16.4 Pre-Built Agents
+
+* **Idea Generation Agent:** Uses a team of AI agents to plan, brainstorm, and evaluate ideas.
+  * *Workflow:* Enter your goal → review the generated plan → click **Start session** → review multiple generated ideas.
+* **Deep Research Agent:** Conducts in-depth analysis and produces comprehensive reports on complex topics.
+  * *Workflow:* Enter your research prompt → review and edit the drafted research plan → click **Start research** → receive a **full written report** and an **audio summary**.
+
+### 16.5 NotebookLM & Studio
+
+* **Create a Notebook:** Open **NotebookLM** from the pin section and select **Create new notebook**.
+* **Mix Diverse Sources:** Add **Google Docs, website URLs, YouTube videos, copied text, or uploaded local files** as grounding sources.
+* **Source-Grounded Q&A & Notes:** Ask questions answered strictly from your uploaded sources and **save useful responses as notes** for later access.
+* **Studio Tab:** Transform your source content into dynamic formats, including **audio overviews, video presentations, mind maps, and structured reports**.
