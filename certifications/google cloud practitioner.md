@@ -1887,3 +1887,404 @@ You can chain Google Cloud's ML APIs to build powerful pipelines. For example, p
 * [Cloud Storage Documentation](https://cloud.google.com/storage/docs)
 
 * [Cloud CDN Overview](https://cloud.google.com/cdn/docs/overview)
+
+
+
+Hosting a Scalable Web App on Compute Engine
+
+1. Foundations & Automation
+Startup Scripts: You can automate the configuration of virtual machines (VMs) by passing a startup script during creation. This script runs every time the instance boots, handling tasks like installing dependencies (Node.js, Supervisor), downloading code from Cloud Storage, and starting services.
+
+Cloud Storage for Deployment: Cloud Storage buckets act as a centralized staging area for your application code and startup scripts, allowing instances to securely pull the latest versions when they launch.
+
+2. Instance Templates & Managed Instance Groups (MIGs)
+Instance Templates: These act as blueprints for your VMs. They define the machine type, boot disk, network settings, and metadata (like the startup script URL). Once created, templates cannot be edited; to make changes, you must create a new template.
+
+Managed Instance Groups (MIGs): MIGs use instance templates to manage a group of identical VMs as a single entity. They ensure high availability by keeping your instances running and allow for advanced features like autohealing, autoscaling, and rolling updates.
+
+3. Traffic Management & Load Balancing
+HTTP(S) Load Balancing: A global load balancer acts as a single point of entry (a single public IP) for your application. It uses a URL Map to direct incoming traffic to the correct backend services (e.g., routing /api/orders to the backend MIG and / to the frontend MIG).
+
+Health Checks (Load Balancing): The load balancer uses aggressive health checks to constantly verify if instances can serve traffic. If an instance is unresponsive, the load balancer instantly stops sending traffic to it.
+
+4. Autohealing & Autoscaling
+Autohealing: While load balancer health checks just reroute traffic, autohealing health checks proactively recreate and replace failed or frozen VMs to restore system capacity.
+
+Autoscaling by Utilization: You can configure MIGs to automatically add or remove VM replicas based on specific metrics, such as keeping the target load balancing utilization at 60%.
+
+5. Content Delivery Network (CDN)
+Cloud CDN: By enabling Cloud CDN on your frontend backend service, Google caches your static content at the network edge (Google Front End). If a user requests a cached file (a "cache hit"), it is served instantly without ever hitting your Compute Engine instances, saving compute resources and dramatically lowering latency.
+
+6. Rolling Updates & Maintenance
+Zero-Downtime Updates: You can push new code, change environment variables, or upgrade machine types (e.g., e2-standard-2 to e2-small) using Rolling Updates. Compute Engine will systematically replace old instances with new ones based on the updated Instance Template, allowing your site to stay online during maintenance.
+
+
+
+# How to Deploy a Scalable Web App on Google Cloud (Compute Engine)
+
+This guide provides step-by-step instructions and commands to deploy a microservices-based web application (the "Fancy Store") on Google Cloud Compute Engine. It covers single instances, managed instance groups, load balancing, and autoscaling.
+
+## Prerequisites & Setup
+
+Open **Cloud Shell** in your Google Cloud Console.
+
+**1. Set Environment Variables**
+Define your region, zone, and a globally unique bucket name. Replace `[YOUR_PROJECT_ID]` with your actual Google Cloud Project ID.
+
+```bash
+gcloud config set compute/zone "us-east1-c"
+export ZONE=$(gcloud config get compute/zone)
+
+gcloud config set compute/region "us-east1"
+export REGION=$(gcloud config get compute/region)
+
+export PROJECT_ID="[YOUR_PROJECT_ID]"
+export BUCKET_NAME="fancy-store-$PROJECT_ID"
+```
+
+**2. Enable Compute Engine API**
+```bash
+gcloud services enable compute.googleapis.com
+```
+
+## Step 1: Create a Cloud Storage Bucket & Clone Code
+
+Your instances will pull code and configurations directly from a Cloud Storage bucket when they boot up.
+
+**1. Create the bucket:**
+```bash
+gcloud storage buckets create gs://$BUCKET_NAME
+```
+
+**2. Clone the sample application code:**
+```bash
+git clone https://github.com/googlecodelabs/monolith-to-microservices.git
+cd ~/monolith-to-microservices
+./setup.sh
+nvm install 22
+```
+
+## Step 2: Create the Startup Script
+
+The startup script tells the virtual machine exactly how to configure itself, install dependencies, and run the app upon booting.
+
+**1. Create the file:**
+```bash
+touch ~/monolith-to-microservices/startup-script.sh
+```
+
+**2. Edit the file (using the Cloud Shell Editor) and paste the following:**
+*Note: Make sure to replace `[DEVSHELL_PROJECT_ID]` in the script below with your actual Project ID.*
+
+```bash
+#!/bin/bash
+# Install logging monitor
+curl -s "https://storage.googleapis.com/signals-agents/logging/google-fluentd-install.sh" | bash
+service google-fluentd restart &
+
+# Install dependencies from apt
+apt-get update
+apt-get install -yq ca-certificates git build-essential supervisor psmisc
+
+# Install nodejs
+apt-get install -y nodejs npm
+
+# Get the application source code from the Google Cloud Storage bucket
+mkdir /fancy-store
+gcloud storage cp -r gs://fancy-store-[DEVSHELL_PROJECT_ID]/monolith-to-microservices/microservices/* /fancy-store/
+
+# Install app dependencies
+cd /fancy-store/
+npm install
+
+# Create a nodeapp user
+useradd -m -d /home/nodeapp nodeapp
+chown -R nodeapp:nodeapp /fancy-store
+
+# Configure supervisor to run the node app
+cat >/etc/supervisor/conf.d/node-app.conf << EOF
+[program:nodeapp]
+directory=/fancy-store
+command=npm start
+autostart=true
+autorestart=true
+user=nodeapp
+environment=HOME="/home/nodeapp",USER="nodeapp",NODE_ENV="production"
+stdout_logfile=syslog
+stderr_logfile=syslog
+EOF
+
+supervisorctl reread
+supervisorctl update
+```
+
+**3. Upload the script to your Cloud Storage Bucket:**
+```bash
+gcloud storage cp ~/monolith-to-microservices/startup-script.sh gs://$BUCKET_NAME
+```
+
+**4. Upload the application code to your Bucket:**
+```bash
+cd ~
+rm -rf monolith-to-microservices/*/node_modules
+gcloud storage cp -r monolith-to-microservices gs://$BUCKET_NAME/
+```
+
+## Step 3: Deploy the Backend Instance
+
+**1. Create the backend VM:**
+```bash
+gcloud compute instances create backend \
+    --zone=$ZONE \
+    --machine-type=e2-standard-2 \
+    --tags=backend \
+    --image-family=debian-12 \
+    --image-project=debian-cloud \
+    --metadata=startup-script-url=https://storage.googleapis.com/$BUCKET_NAME/startup-script.sh
+```
+
+**2. Get the Backend's External IP:**
+```bash
+gcloud compute instances list
+```
+*Copy the `EXTERNAL_IP` of the backend instance for the next step.*
+
+## Step 4: Configure and Deploy the Frontend Instance
+
+Point the frontend code to the backend you just created.
+
+**1. Update the configuration:**
+Open `~/monolith-to-microservices/react-app/.env` in the Cloud Shell Editor and update it with the Backend's External IP:
+```text
+REACT_APP_ORDERS_URL=http://[BACKEND_EXTERNAL_IP]:8081/api/orders
+REACT_APP_PRODUCTS_URL=http://[BACKEND_EXTERNAL_IP]:8082/api/products
+```
+
+**2. Build the Frontend and Upload to Cloud Storage:**
+```bash
+cd ~/monolith-to-microservices/react-app
+npm install && npm run-script build
+
+cd ~
+rm -rf monolith-to-microservices/*/node_modules
+gcloud storage cp -r monolith-to-microservices gs://$BUCKET_NAME/
+```
+
+**3. Create the frontend VM:**
+```bash
+gcloud compute instances create frontend \
+    --zone=$ZONE \
+    --machine-type=e2-standard-2 \
+    --tags=frontend \
+    --image-family=debian-12 \
+    --image-project=debian-cloud \
+    --metadata=startup-script-url=https://storage.googleapis.com/$BUCKET_NAME/startup-script.sh
+```
+
+## Step 5: Configure Firewall Rules
+
+Allow web traffic to reach your instances using the network tags defined earlier.
+
+```bash
+gcloud compute firewall-rules create fw-fe \
+    --allow tcp:8080 \
+    --target-tags=frontend
+
+gcloud compute firewall-rules create fw-be \
+    --allow tcp:8081-8082 \
+    --target-tags=backend
+```
+
+## Step 6: Create Instance Templates & Managed Instance Groups
+
+Convert your single instances into highly available groups.
+
+**1. Stop the current instances:**
+```bash
+gcloud compute instances stop frontend --zone=$ZONE
+gcloud compute instances stop backend --zone=$ZONE
+```
+
+**2. Create Instance Templates from the stopped VMs:**
+```bash
+gcloud compute instance-templates create fancy-fe \
+    --source-instance-zone=$ZONE \
+    --source-instance=frontend
+
+gcloud compute instance-templates create fancy-be \
+    --source-instance-zone=$ZONE \
+    --source-instance=backend
+```
+
+**3. Delete the original backend VM to save resources (optional):**
+```bash
+gcloud compute instances delete backend --zone=$ZONE --quiet
+```
+
+**4. Create the Managed Instance Groups (MIGs):**
+```bash
+gcloud compute instance-groups managed create fancy-fe-mig \
+    --zone=$ZONE \
+    --base-instance-name fancy-fe \
+    --size 2 \
+    --template fancy-fe
+
+gcloud compute instance-groups managed create fancy-be-mig \
+    --zone=$ZONE \
+    --base-instance-name fancy-be \
+    --size 2 \
+    --template fancy-be
+```
+
+**5. Define Named Ports for the Load Balancer:**
+```bash
+gcloud compute instance-groups set-named-ports fancy-fe-mig \
+    --zone=$ZONE \
+    --named-ports frontend:8080
+
+gcloud compute instance-groups set-named-ports fancy-be-mig \
+    --zone=$ZONE \
+    --named-ports orders:8081,products:8082
+```
+
+## Step 7: Configure Autohealing
+
+Ensure instances are recreated if the application crashes.
+
+**1. Create Health Checks:**
+```bash
+gcloud compute health-checks create http fancy-fe-hc \
+    --port 8080 \
+    --check-interval 30s \
+    --healthy-threshold 1 \
+    --timeout 10s \
+    --unhealthy-threshold 3
+
+gcloud compute health-checks create http fancy-be-hc \
+    --port 8081 \
+    --request-path=/api/orders \
+    --check-interval 30s \
+    --healthy-threshold 1 \
+    --timeout 10s \
+    --unhealthy-threshold 3
+```
+
+**2. Allow Google Health Check probes through the firewall:**
+```bash
+gcloud compute firewall-rules create allow-health-check \
+    --allow tcp:8080-8081 \
+    --source-ranges 130.211.0.0/22,35.191.0.0/16 \
+    --network default
+```
+
+**3. Apply Autohealing to the MIGs:**
+```bash
+gcloud compute instance-groups managed update fancy-fe-mig \
+    --zone=$ZONE \
+    --health-check fancy-fe-hc \
+    --initial-delay 300
+
+gcloud compute instance-groups managed update fancy-be-mig \
+    --zone=$ZONE \
+    --health-check fancy-be-hc \
+    --initial-delay 300
+```
+
+## Step 8: Set Up the HTTP Load Balancer
+
+Place a global load balancer in front of your MIGs to route traffic securely.
+
+**1. Create Load Balancer Health Checks:**
+```bash
+gcloud compute health-checks create http fancy-fe-frontend-hc --request-path=/ --port=8080
+gcloud compute health-checks create http fancy-be-orders-hc --request-path=/api/orders --port=8081
+gcloud compute health-checks create http fancy-be-products-hc --request-path=/api/products --port=8082
+```
+
+**2. Create Backend Services:**
+```bash
+gcloud compute backend-services create fancy-fe-frontend --health-checks=fancy-fe-frontend-hc --port-name=frontend --global
+gcloud compute backend-services create fancy-be-orders --health-checks=fancy-be-orders-hc --port-name=orders --global
+gcloud compute backend-services create fancy-be-products --health-checks=fancy-be-products-hc --port-name=products --global
+```
+
+**3. Attach MIGs to Backend Services:**
+```bash
+gcloud compute backend-services add-backend fancy-fe-frontend --instance-group-zone=$ZONE --instance-group fancy-fe-mig --global
+gcloud compute backend-services add-backend fancy-be-orders --instance-group-zone=$ZONE --instance-group fancy-be-mig --global
+gcloud compute backend-services add-backend fancy-be-products --instance-group-zone=$ZONE --instance-group fancy-be-mig --global
+```
+
+**4. Route Traffic (URL Map & Proxy):**
+```bash
+# Default routing to frontend
+gcloud compute url-maps create fancy-map --default-service fancy-fe-frontend
+
+# Map API paths to backend services
+gcloud compute url-maps add-path-matcher fancy-map \
+   --default-service fancy-fe-frontend \
+   --path-matcher-name orders \
+   --path-rules "/api/orders=fancy-be-orders,/api/products=fancy-be-products"
+
+# Create HTTP Proxy
+gcloud compute target-http-proxies create fancy-proxy --url-map fancy-map
+
+# Create Global Forwarding Rule (Public IP)
+gcloud compute forwarding-rules create fancy-http-rule --global --target-http-proxy fancy-proxy --ports 80
+```
+
+## Step 9: Reconfigure Frontend for Load Balancer
+
+Update the frontend to use the Load Balancer's IP instead of the direct backend IP.
+
+**1. Get the Load Balancer IP:**
+```bash
+gcloud compute forwarding-rules list --global
+```
+
+**2. Update the `.env` file:**
+Edit `~/monolith-to-microservices/react-app/.env` and replace the URLs with the Load Balancer's IP (remove the ports).
+```text
+REACT_APP_ORDERS_URL=http://[LOAD_BALANCER_IP]/api/orders
+REACT_APP_PRODUCTS_URL=http://[LOAD_BALANCER_IP]/api/products
+```
+
+**3. Rebuild and upload code:**
+```bash
+cd ~/monolith-to-microservices/react-app
+npm install && npm run-script build
+
+cd ~
+rm -rf monolith-to-microservices/*/node_modules
+gcloud storage cp -r monolith-to-microservices gs://$BUCKET_NAME/
+```
+
+**4. Issue a Rolling Update to Frontend MIG:**
+Force the instances to restart and pull the latest code.
+```bash
+gcloud compute instance-groups managed rolling-action replace fancy-fe-mig \
+    --zone=$ZONE \
+    --max-unavailable 100%
+```
+
+## Step 10: Enable Autoscaling and Cloud CDN
+
+**1. Enable Autoscaling (Scale out when CPU hits 60%):**
+```bash
+gcloud compute instance-groups managed set-autoscaling fancy-fe-mig \
+  --zone=$ZONE \
+  --max-num-replicas 2 \
+  --target-load-balancing-utilization 0.60
+
+gcloud compute instance-groups managed set-autoscaling fancy-be-mig \
+  --zone=$ZONE \
+  --max-num-replicas 2 \
+  --target-load-balancing-utilization 0.60
+```
+
+**2. Enable Cloud CDN on the Frontend:**
+```bash
+gcloud compute backend-services update fancy-fe-frontend --enable-cdn --global
+```
+
+Your scalable, highly-available web application is now successfully deployed on Google Cloud!
